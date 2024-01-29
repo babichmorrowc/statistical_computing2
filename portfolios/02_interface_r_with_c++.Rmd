@@ -1,0 +1,57 @@
+---
+title: "Integrating R and C++"
+output: pdf_document
+date: "2024-01-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Integrating R and C++
+
+### Via R's C API
+
+Understanding how to interface R with C++ via R's built-in C API gives us the background knowledge to understand how the `Rcpp` package works ultimately.
+
+Need to include `R.h` and `Rinternals.h` which include functions like `REAL`
+All inputs and outputs need to be of class `SEXP` -- then need to map into C objects
+  Can't guarantee that the objects will be of the right type
+`REAL` extracts real part (since everything from R is stored as a complex number)
+`R.NilValue` is the equivalent of `NULL` in C
+
+`system()` is equivalent to opening a terminal and typing in the command
+`R CMD SHLIB expSmooth.c` will compile the C code
+Then `dyn.load` will load the shared object file into R
+
+
+`.Call` is the function that allows us to call C functions from R
+  First argument is the name of the function
+  Second argument is the list of arguments to pass to the function -- need to be in the right order
+
+`coerceVector` can convert object to a subtype
+`allocVector` allocates memory for a vector of a given type -- you can return this vector into R
+In R, `rm` removes an object (unprotects the object, not instantly removing it)
+R garbage collector will remove any unprotected objects that are no longer being used
+`PROTECT` protects an object from being garbage collected explicitly in C
+Need to `UNPROTECT` at the end with the number of objects that were protected -- if you don't, you'll have a memory leak
+Things that live in C memory aren't exposed to the garbage collector so you don't have to un/protect them
+Allocating memory every time you call the function can slow it down (compared to C, still faster than R)
+
+### Via `Rcpp`
+
+`Rcpp` is a package that allows us to write C++ code that can be called from R. It is a package that is built on top of R's C API, but it provides a much more user-friendly interface. It also provides a lot of useful functions that make it easier to convert between R and C++ objects.
+
+Need to include `Rcpp.h` instead of `R.h` and `Rinternals.h` and `using namespace Rcpp;`
+Need to add `RcppExport` to the function definition to make it callable from R
+`as` converts R object to a C++ object of the specified type
+  More convenient than all of the `PROTECT` stuff (doing that under the hood)
+`const` means the vector cannot be modified (optional though)
+
+Comment `// [[Rcpp::export(name = "expSmoothRcpp")]]` is an `Rcpp` attribute that allows us to call the function from R
+Function definition directly specifies `NumericVector` as the output type, `NumericVector` and `double` as the input types
+  Not using `SEXP` anymore
+  Can't call using `.Call` anymore -- need to use `sourceCpp` instead
+`sourceCpp` calls `.Call` internally and does the type conversions automatically
+
+

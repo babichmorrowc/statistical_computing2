@@ -1,0 +1,13 @@
+---
+title: "Introduction to C++ Programming"
+output: pdf_document
+date: "2024-01-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction to *C++* Programming
+
+C++ is a general-purpose programming language that offers power, efficiency, and speed. Because it is a compiled language, it is much faster than interpreted languages like Python and R.
