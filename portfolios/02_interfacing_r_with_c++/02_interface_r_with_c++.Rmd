@@ -1,0 +1,103 @@
+---
+title: "Assessed coursework: Integrating R and C++"
+output: pdf_document
+date: "2024-01-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+```
+
+## Adaptive kernel regression smoothing
+
+We will consider data generated from the model $$y_i = \sin(\alpha \pi x^3) + \z_i$$ where $z_i \sim N(0, \sigma^2)$, $i \in \{1,...,n\}$.
+
+```{r}
+set.seed(998)
+# n = 200
+nobs <- 200 
+x <- runif(nobs)
+# alpha = 4, sigma = 0.2
+y <- sin(4*pi*x^3) + rnorm(nobs, 0, 0.2)
+plot(x, y)
+```
+
+We want to model this data using a kernel regression smoother (KRS) by estimating $\mu(x) = \mathbb{E}(y | x)$. The KRS estimator is given by $$\hat{\mu}(x) = \frac{\sum_{i=1}^n \kappa_\lambda(x , x_i) y_i}{\sum_{i=1}^n \kappa_\lambda(x 
+, x_i)}$$ where $\kappa$ is a kernel function with bandwidth $\lambda > 0$. The following R function uses the Gaussian kernel function with variance $\lambda^2$:
+
+```{r}
+meanKRS <- function(y, x, x0, lam){
+
+ n <- length(x)
+ n0 <- length(x0)
+ 
+ out <- numeric(n0)
+ for(ii in 1:n0){
+  out[ii] <- sum( dnorm(x, x0[ii], lam) * y ) / sum( dnorm(x, x0[ii], lam) )   
+ }
+ 
+ return( out )
+}
+```
+
+We can compare the performance of the KRS estimator with different bandwidths:
+
+```{r}
+xseq <- seq(0, 1, length.out = 1000)
+muSmoothLarge <- meanKRS(y = y, x = x, x0 = xseq, lam = 0.06)
+muSmoothSmall <- meanKRS(y = y, x = x, x0 = xseq, lam = 0.02)
+plot(x, y, col = "grey")
+lines(xseq, muSmoothLarge, col = 2)
+lines(xseq, muSmoothSmall, col = 4)
+```
+
+### Q1a
+
+We want to write a C++ version of the `meanKRS` function. The function is as follows:
+
+```{Rcpp eval = FALSE}
+#include <iostream>
+#include <vector>
+#include <numeric>
+#include <Rmath.h>
+
+SEXP meanKRS_C(SEXP y, SEXP x, SEXP x0, SEXP lambda )
+{
+    int n = x.size();
+    int n0 = x0.size();
+
+    std::vector<double> out;
+
+    for (int i = 0; i < n0; i++)
+    {
+        std::vector<double> dens_norm = dnorm(x, x0[i], lambda);
+
+        // Calculate the product of dnorm and y
+        std::vector<double> dens_norm_y;
+        for (int j = 0; j < dens_norm.size(); j++)
+        {
+            dens_norm_y.push_back(dens_norm[j] * y[j]);
+        }
+        
+        double sum_dens_norm_y = std::accumulate(dens_norm_y.begin(), dens_norm_y.end(), 0.0);
+        double sum_dens_norm = std::accumulate(dens_norm.begin(), dens_norm.end(), 0.0);
+        double element = sum_dens_norm_y / sum_dens_norm;
+        out.push_back(element);
+    }
+    
+    return out;
+}
+```
+
+We can compile the code as follows:
+
+```{r}
+# Compile the code
+system(paste0("R CMD SHLIB ", here("portfolios/02_interfacing_r_with_c++/meanKRS_C.cpp")))
+# Load the binary code
+dyn.load("meanKRS_C.so")
+# Check if the function is loaded
+is.loaded("meanKRS_C")
+```
+
