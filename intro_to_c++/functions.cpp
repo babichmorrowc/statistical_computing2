@@ -1,8 +1,8 @@
 #include <iostream>
 
-int sum(int a, int b)
+int sum(auto a, auto b)
 {
-    int c = a + b;
+    auto c = a + b;
     return c;
 }
 
