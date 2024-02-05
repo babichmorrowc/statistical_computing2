@@ -1,0 +1,30 @@
+---
+title: "Advanced Rcpp I Notes"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-02-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## `Rcpp sugar`
+
+We can use `sourceCpp` to compile and load the C++ code into R.
+
+Use `usingnamespace Rcpp` to avoid having to declare `Rcpp::` before each function.
+
+Constructor: when you construct an object of a class, you can do something like `out(ni)` to create an object of the class `out` with the same dimensions as `ni`.
+
+`Rcpp sugar` overloads operators to vectorize operations, e.g. `+` and `*` are vectorized.
+
+Loop in `Rcpp` has worse performance than just using R because the basic operations in R are already written using C or C++, so calling C++ from R is just adding unnecessary overhead -- `Rcpp sugar` has the best performance.
+
+## `RcppArmadillo`
+
+`RcppArmadillo` is a package that provides a wrapper for `Armadillo`, a C++ library for linear algebra. `Rcpp` does not have an equivalent of `%*%` for matrix multiplication, so it is better to use `RcppArmadillo` for matrix operations. Note that `arma` is the namespace for `Armadillo`.
+
+Passing by reference is more efficient than passing by value, so use `arma::mat&` instead of `arma::mat` in the function signature. If you don't put the `&`, the function will make a copy of the matrix, which is inefficient.
+
+The performance improvement of `Armadillo` is mostly due to the fact that it automatically determines the most efficient order of the computations performed, as opposed to `R`, which will just perform multiplication from left to right unless you specify a different order with `()`.
