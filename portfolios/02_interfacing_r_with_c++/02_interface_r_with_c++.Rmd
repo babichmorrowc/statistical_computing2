@@ -205,6 +205,19 @@ lambda_seq <- seq(0.01, 0.1, by = 0.01)
 .Call("krsCV_C", y_vec = y, x_vec = x, k_val = 5, lambda_sequence = lambda_seq)
 ```
 
+```{r}
+# Compile the code
+system(paste0("R CMD SHLIB ", here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.cpp")))
+# Load the binary code
+dyn.load(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
+# Check if the function is loaded
+is.loaded("krsCV_Cpp")
+```
+
+```{r}
+.Call("krsCV_Cpp", x_vec = x, k_val = as.integer(5))
+```
+
 ### Q2
 
 The following R function allows the bandwidth to depend on $x$, i.e. $\lambda = \lambda(x)$:
