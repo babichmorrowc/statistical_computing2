@@ -191,21 +191,7 @@ We can now write an equivalent function in C++ to compare results and performanc
 ```
 
 ```{r}
-# Compile the code
-system(paste0("R CMD SHLIB ", here("portfolios/02_interfacing_r_with_c++/krsCV_C.cpp")))
-# Load the binary code
-dyn.load(here("portfolios/02_interfacing_r_with_c++/krsCV_C.so"))
-# Check if the function is loaded
-is.loaded("krsCV_C")
-```
-
-
-```{r}
-lambda_seq <- seq(0.01, 0.1, by = 0.01)
-.Call("krsCV_C", y_vec = y, x_vec = x, k_val = 5, lambda_sequence = lambda_seq)
-```
-
-```{r}
+dyn.unload(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
 # Compile the code
 system(paste0("R CMD SHLIB ", here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.cpp")))
 # Load the binary code
@@ -215,7 +201,14 @@ is.loaded("krsCV_Cpp")
 ```
 
 ```{r}
-.Call("krsCV_Cpp", x_vec = x, k_val = as.integer(5))
+# Get the best lambda value from 5-fold CV
+# Using the C++ function
+c_best_lambda <- .Call("krsCV_Cpp",
+                       y_vec = y,
+                       x_vec = x,
+                       k_val = as.integer(5),
+                       lambda_sequence = seq(0.01, 0.1, by = 0.01))
+c_best_lambda
 ```
 
 ### Q2
