@@ -184,14 +184,10 @@ lines(xseq, mu_best_lambda, col = 2)
 
 We can see the fit above using $\lambda = `r mu_best_lambda`$.
 
-We can now write an equivalent function in C++ to compare results and performance:
-
-```{Rcpp eval = FALSE}
-
-```
+We can now write an equivalent function in C++ to compare results and performance. The `krsCV_Cpp.cpp` file referenced here is available on GitHub [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/02_interfacing_r_with_c%2B%2B/krsCV_Cpp.cpp).
 
 ```{r}
-dyn.unload(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
+# dyn.unload(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
 # Compile the code
 system(paste0("R CMD SHLIB ", here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.cpp")))
 # Load the binary code
@@ -199,6 +195,8 @@ dyn.load(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
 # Check if the function is loaded
 is.loaded("krsCV_Cpp")
 ```
+
+We can now use the C++ function to perform 5-fold cross-validation and return the value of $\lambda$ yielding the highest average MSE across the 5 folds.
 
 ```{r}
 # Get the best lambda value from 5-fold CV
@@ -210,6 +208,25 @@ c_best_lambda <- .Call("krsCV_Cpp",
                        lambda_sequence = seq(0.01, 0.1, by = 0.01))
 c_best_lambda
 ```
+
+We can compare the computational performance of `krsCV_Cpp` to our R function `krsCV`:
+
+```{r}
+# Compare computing time
+krsCV_R <- function() krsCV(y = y,
+                            x = x,
+                            k = 5, 
+                            lam_seq = seq(0.01, 0.1, by = 0.01))
+krsCV_Cpp <- function() .Call("krsCV_Cpp",
+                       y_vec = y,
+                       x_vec = x,
+                       k_val = as.integer(5),
+                       lambda_sequence = seq(0.01, 0.1, by = 0.01))
+
+microbenchmark(krsCV_R(), krsCV_Cpp(), times = 500)
+```
+
+Once again, the C++ version is much faster than the R version, this time around 4 times faster.
 
 ### Q2
 
