@@ -21,8 +21,10 @@ SEXP mean_var_krs_Cpp(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param) {
   double *x0 = REAL(coerceVector(x0_vec, REALSXP));
   double lambda = REAL(lambda_param)[0];
   
+  // Vector mu of the same length as x_vec
   std::vector<double> mu(n);
   
+  // Fit the kernel regression smoothing model using lambda
   for (int i = 0; i < n; i++) {
     double sum_dens_norm_y = 0;
     double sum_dens_norm = 0;
@@ -36,14 +38,16 @@ SEXP mean_var_krs_Cpp(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param) {
     mu[i] = sum_dens_norm_y / sum_dens_norm;
   }
   
-  
+  // Calculate the absolute residuals from the original fitted model
   std::vector<double> resAbs(n);
   for (int i = 0; i < n; i++) {
     resAbs[i] = std::abs(y[i] - mu[i]);
   }
   
+  // Vector madHat of the same length as x0_vec
   std::vector<double> madHat(n0);
   
+  // Fit a KRS model with the same lambda to estimate the absolute residuals
   for (int i = 0; i < n0; i++) {
     double sum_dens_norm_resAbs = 0;
     double sum_dens_norm = 0;
@@ -57,6 +61,7 @@ SEXP mean_var_krs_Cpp(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param) {
     madHat[i] = sum_dens_norm_resAbs / sum_dens_norm;
   }
   
+  // Calculate the weights
   std::vector<double> w(n0);
   for (int i = 0; i < n0; i++) {
     w[i] = 1 / madHat[i];
@@ -73,6 +78,8 @@ SEXP mean_var_krs_Cpp(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param) {
   SEXP out;
   PROTECT(out = allocVector(REALSXP, n0));
   
+  // Fit a KRS model to the original data
+  // Where the lambda parameter is the product of lambda and the weight
   for (int ii = 0; ii < n0; ii++) {
     double sum_dens_norm_y = 0;
     double sum_dens_norm = 0;

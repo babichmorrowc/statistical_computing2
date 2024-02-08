@@ -56,7 +56,7 @@ lines(xseq, muSmoothSmall, col = 4)
 
 ### Q1a
 
-We want to write a C++ version of the `meanKRS` function. The function is as follows:
+We want to write a C++ version of the `meanKRS` function. The function is as follows (available on GitHub [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/02_interfacing_r_with_c%2B%2B/meanKRS_C.c):
 
 ```{Rcpp eval = FALSE}
 #include <R.h>
@@ -66,15 +66,19 @@ We want to write a C++ version of the `meanKRS` function. The function is as fol
 SEXP meanKRS_C(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param)
 {
   
+  // Get vector lengths from R object
   int n = length(x_vec);
   int n0 = length(x0_vec);
+  // Set up and protect output vector
   SEXP out = PROTECT(allocVector(REALSXP, n0));
   
+  // Get pointers to the R object input parameters
   double *y = REAL(coerceVector(y_vec, REALSXP));
   double *x = REAL(coerceVector(x_vec, REALSXP));
   double *x0 = REAL(coerceVector(x0_vec, REALSXP));
   double lambda = REAL(lambda_param)[0];
   
+  // Calculate the sum of the results of dnorm
   for (int i = 0; i < n0; i++)
   {
     double sum_dens_norm_y = 0;
@@ -83,10 +87,11 @@ SEXP meanKRS_C(SEXP y_vec, SEXP x_vec, SEXP x0_vec, SEXP lambda_param)
     for (int j = 0; j < n; j++)
     {
       double dens_norm = dnorm(x[j], x0[i], lambda, 0);
-      sum_dens_norm_y += dens_norm * y[j];
-      sum_dens_norm += dens_norm;
+      sum_dens_norm_y += dens_norm * y[j]; // Sum of dnorm * y
+      sum_dens_norm += dens_norm; // Sum of dnorm
     }
     
+    // Result is ratio
     REAL(out)[i] = sum_dens_norm_y / sum_dens_norm;
   }
   
@@ -182,9 +187,9 @@ plot(x, y, col = "grey")
 lines(xseq, mu_best_lambda, col = 2)
 ```
 
-We can see the fit above using $\lambda = `r mu_best_lambda`$.
+We can see the fit above using $\lambda = `r best_lambda`$.
 
-We can now write an equivalent function in C++ to compare results and performance. The `krsCV_Cpp.cpp` file referenced here is available on GitHub [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/02_interfacing_r_with_c%2B%2B/krsCV_Cpp.cpp).
+Next, we can write an equivalent function in C++ to compare results and performance. The `krsCV_Cpp.cpp` file referenced here is available on GitHub [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/02_interfacing_r_with_c%2B%2B/krsCV_Cpp.cpp).
 
 ```{r}
 # dyn.unload(here("portfolios/02_interfacing_r_with_c++/krsCV_Cpp.so"))
@@ -273,5 +278,40 @@ lines(xseq, muSmoothSmall, col = 4) # blue
 lines(xseq, muSmoothAdapt, col = 1) # black
 ```
 
-We now want to write a version of `mean_var_KRS` in C++ and compare the results and performance with the R function.
+We now want to write a version of `mean_var_KRS` in C++ and compare the results and performance with the R function. Code for the C++ function can be found on GitHub [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/02_interfacing_r_with_c%2B%2B/mean_var_krs_Cpp.cpp).
+
+```{r}
+# dyn.unload(here("portfolios/02_interfacing_r_with_c++/mean_var_krs_Cpp.so"))
+# Compile the code
+system(paste0("R CMD SHLIB ",
+              here("portfolios/02_interfacing_r_with_c++/mean_var_krs_Cpp.cpp")))
+# Load the binary code
+dyn.load(here("portfolios/02_interfacing_r_with_c++/mean_var_krs_Cpp.so"))
+# Check if the function is loaded
+is.loaded("mean_var_krs_Cpp")
+```
+
+We can use the C++ function to fit the model and compare the results with the R function:
+
+```{r}
+mean_var_test <- .Call("mean_var_krs_Cpp",
+                       y_vec = y,
+                       x_vec = x,
+                       x0_vec = xseq,
+                       lambda_param = 0.06)
+
+# Compare with results of R function
+all.equal(muSmoothAdapt, mean_var_test)
+
+# Compare computing time
+var_krs_R <- function() mean_var_KRS(y = y, x = x, x0 = xseq, lam = 0.06)
+var_krs_C <- function() .Call("mean_var_krs_Cpp",
+                              y_vec = y,
+                              x_vec = x,
+                              x0_vec = xseq,
+                              lambda_param = 0.06)
+microbenchmark(var_krs_R(), var_krs_C(), times = 500)
+```
+
+Once again, the implementation in C++ is much faster than in R, a little over 3.5 times faster.
 

@@ -17,6 +17,8 @@ extern "C" {
                               double lambda_param);
 }
 
+// Function to perform kernel regression smoothing
+// Takes C++ vectors as input and returns a C++ vector
 std::vector<double> meanKRS(std::vector<double> y_vec,
                             std::vector<double> x_vec,
                             std::vector<double> x0_vec,
@@ -27,6 +29,7 @@ std::vector<double> meanKRS(std::vector<double> y_vec,
   int n0 = x0_vec.size();
   std::vector<double> out(n0);
   
+  // Calculate the sum of the results of dnorm
   for (int i = 0; i < n0; i++)
   {
     double sum_dens_norm_y = 0;
@@ -45,17 +48,15 @@ std::vector<double> meanKRS(std::vector<double> y_vec,
   return out;
 }
 
+// Function to perform k-fold cross-validation for kernel regression smoothing
+// Takes R objects as input and returns a R vector
 SEXP krsCV_Cpp(SEXP y_vec, SEXP x_vec, SEXP k_val, SEXP lambda_sequence)
 {
-  int n;
-  int lambda_length;
-  int k;
+  int n = length(x_vec);
+  int lambda_length = length(lambda_sequence);
+  int k = INTEGER(k_val)[0];
   SEXP out;
   PROTECT(out = allocVector(REALSXP, 1));
-  
-  n = length(x_vec);
-  lambda_length = length(lambda_sequence);
-  k = INTEGER(k_val)[0];
   
   double *x = REAL(coerceVector(x_vec, REALSXP));
   double *y = REAL(coerceVector(y_vec, REALSXP));
