@@ -1,6 +1,7 @@
 #include <random>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 extern "C" {
   #include <R.h>
   #include <Rinternals.h>
