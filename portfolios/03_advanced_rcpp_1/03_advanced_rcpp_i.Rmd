@@ -1,0 +1,207 @@
+---
+title: "Advanced Rcpp I"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Local polynomial regression
+
+### Load the data
+
+We have the following data set on solar electricity production in Sidney, Australia:
+
+```{r message = FALSE}
+library(here)
+library(tidyverse)
+load(here("portfolios/03_advanced_rcpp_1/data/solarAU.RData"))
+head(solarAU)
+```
+
+We will add a column for the log-transformed production:
+
+```{r message = FALSE}
+solarAU$logprod <- log(solarAU$prod+0.01)
+# Visualize log-production
+library(viridis)
+ggplot(solarAU,
+       aes(x = toy, y = tod, z = logprod)) +
+       stat_summary_2d() +
+       scale_fill_gradientn(colours = viridis(50))
+```
+
+### Q1: Linear regression model
+
+We want to model $\mathbb{E}(y | \mathbf{x})$ where $y$ is the log-production and $\mathbf{x} = \{ \text{tod}, \text{toy}\}$. We will use a polynomial regression model of degree 2: $$\mathbb{E}(y | \mathbf{x}) = \beta_0 + \beta_1 \text{tod} + \beta_2 \text{tod}^2 + \beta_3 \text{toy} + \beta_4 \text{toy}^2 = \tilde{\mathbf{x}}^\top \beta$$
+where $\tilde{\mathbf{x}} = \{\text{tod}, \text{tod}^2, \text{toy}, \text{toy}^2\}$.
+
+Using R, we would fit the model as follows:
+
+```{r}
+fit <- lm(logprod ~ tod + I(tod^2) + toy + I(toy^2), data = solarAU)
+summary(fit)
+```
+
+We now want to use `RcppArmadillo` to fit a linear regression model by solving $$\hat{\beta} = \arg\min_{\beta} \lVert y - \mathbf{X}\beta \rVert^2$$
+We can define $\mathbf{X}$ and $y$ in R by:
+
+```{r}
+X <- with(solarAU, cbind(1, tod, tod^2, toy, toy^2))
+y <- solarAU$logprod
+```
+
+We can write a function to fit the model using QR decomposition with `RcppArmadillo`:
+
+```{r}
+library(Rcpp)
+sourceCpp(code = '
+// [[Rcpp::depends(RcppArmadillo)]]
+#include <RcppArmadillo.h>
+using namespace arma;
+
+// [[Rcpp::export(name = "armadillo_lm")]]
+vec armadillo_lm(mat& X, vec& y) {
+  mat Q;
+  mat R;
+  
+  qr_econ(Q, R, X);
+  vec beta = solve(R, (trans(Q) * y));
+  return beta;
+}
+')
+```
+
+We will compare the results and performance with the `lm` function in R:
+
+```{r}
+arma_lm_beta <- armadillo_lm(X,y)
+max(abs(coef(fit) - arma_lm_beta)) # results are the same
+
+library(microbenchmark)
+lm_R <- function() lm(logprod ~ tod + I(tod^2) + toy + I(toy^2), data = solarAU)
+lm_arma <- function() armadillo_lm(X,y)
+microbenchmark(lm_R(), lm_arma(), times = 500)
+```
+
+The implementation in `RcppArmadillo` is over 6 times faster than the `lm` function in R.
+
+We can now see if the model is a good fit for the data:
+
+```{r}
+library(gridExtra)
+
+solarAU <- solarAU %>% 
+  mutate(lm_fitted = fit$fitted.values,
+         lm_resids = fit$residuals)
+
+fitted_plot <- ggplot(solarAU,
+                      aes(x = toy, y = tod, z = lm_fitted)) +
+  stat_summary_2d() +
+  scale_fill_gradientn(colours = viridis(50)) +
+  theme_bw() +
+  labs(title = "Fitted values")
+
+resid_plot <- ggplot(solarAU,
+                     aes(x = toy, y = tod, z = lm_resids)) +
+  stat_summary_2d() +
+  scale_fill_gradientn(colours = viridis(50)) +
+  theme_bw() +
+  labs(title = "Residual values")
+grid.arrange(fitted_plot, resid_plot, ncol = 2)
+```
+
+The plot of residuals shows a non-linear pattern, suggesting that the model is not a good fit for the data.
+
+### Q2: Local least squares regression
+
+We will now let the regression coefficients be a function of $\mathbf{x}$, i.e. $\hat{\beta} = \hat{\beta}(\mathbf{x})$. For a given $\mathbf{x}_0$, $$\hat{\beta}(\mathbf{x}_0) = \arg\min_{\beta} \sum_{i=1}^n \kappa_{\mathbf{H}}(\mathbf{x}_0 - \mathbf{x}_i) (y_i - \tilde{\mathbf{x}}_i^\top \beta)^2$$
+where $\kappa_H$ is a density kernel with positive definite bandwidth matrix $\mathbf{H}$.
+
+We can implement a function in R to do this using the Gaussian kernel:
+
+```{r}
+library(mvtnorm)
+lmLocal <- function(y, x0, X0, x, X, H){
+  w <- dmvnorm(x, x0, H)
+  fit <- lm(y ~ -1 + X, weights = w)
+  return( t(X0) %*% coef(fit) )
+}
+```
+
+We can test this model using a subset of 2000 data points (since fitting it on all `r nrow(solarAU)` data points would be computationally costly):
+
+```{r}
+set.seed(123)
+n <- nrow(X)
+nsub <- 2e3
+# Get 2000 random indices
+sub <- sample(1:n, nsub, replace = FALSE)
+
+y <- solarAU$logprod
+solarAU_sub <- solarAU[sub, ]
+x <- as.matrix(solarAU[c("tod", "toy")])
+x0 <- x[sub, ]
+X0 <- X[sub, ]
+# Using the following H
+H <- diag(c(1, 0.1)^2)
+
+# Obtain estimates at each subsampled location
+# And check how long that takes
+tictoc::tic()
+predLocal <- sapply(1:nsub, function(ii){
+  lmLocal(y = y, x0 = x0[ii, ], X0 = X0[ii, ], x = x, X = X, H = H)
+})
+tictoc::toc()
+```
+
+We can see this is a fairly slow process. Let's see how the fit / residuals look:
+
+```{r}
+solarAU_sub <- solarAU_sub %>% 
+  mutate(lmLocal_fitted = predLocal,
+         lmLocal_resids = logprod - predLocal)
+
+fitted_plot <- ggplot(solarAU_sub,
+                      aes(x = toy, y = tod, z = lmLocal_fitted)) +
+  stat_summary_2d() +
+  scale_fill_gradientn(colours = viridis(50)) +
+  theme_bw() +
+  labs(title = "Fitted values")
+
+resid_plot <- ggplot(solarAU_sub,
+                     aes(x = toy, y = tod, z = lmLocal_resids)) +
+  stat_summary_2d() +
+  scale_fill_gradientn(colours = viridis(50)) +
+  theme_bw() +
+  labs(title = "Residual values")
+
+grid.arrange(fitted_plot, resid_plot, ncol = 2)
+```
+
+We no longer have a pattern in the residuals, and our fitted values closely resemble our original data.
+
+Let's see if we can implement the local least squares in `RcppArmadillo` to get these good results without the high computational cost.
+
+```{r}
+sourceCpp(file = 'armadillo_lm_local.cpp')
+
+arma_predLocal <- armadillo_lm_local(y, x0, X0, x, X, H)
+max(abs(predLocal - arma_predLocal)) # results are the same
+
+predLocal_R <- function() sapply(1:nsub, function(ii){
+  lmLocal(y = y, x0 = x0[ii, ], X0 = X0[ii, ], x = x, X = X, H = H)
+})
+predLocal_arma <- function() armadillo_lm_local(y, x0, X0, x, X, H)
+microbenchmark(predLocal_R(), predLocal_arma(), times = 10) # only 10 runs because R is super slow
+```
+
+The `RcppArmadillo` implementation is almost 7 times faster than the R implementation.
+
+### Q3: Choosing bandwidth with cross-validation
+
+We will now use cross-validation to choose the bandwidth matrix $\mathbf{H}$. We will 
+
