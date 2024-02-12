@@ -1,0 +1,18 @@
+---
+title: "Advanced Rcpp II Notes"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-02-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Spreading Rcpp code over multiple files
+
+Example of how to split into multiple files: 
+
+1. File implementing the function you want to export to R: includes a header file
+2. Header file: unless it has been defined before, define the function
+3. File with definition of function called in the first file
