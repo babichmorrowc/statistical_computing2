@@ -16,3 +16,15 @@ Example of how to split into multiple files:
 1. File implementing the function you want to export to R: includes a header file
 2. Header file: unless it has been defined before, define the function
 3. File with definition of function called in the first file
+
+Using `sourceCpp` will take care of all the compiler flags and such for you
+
+## Using Rcpp in an R package
+
+`Rcpp.package.skeleton("mypackage")` will create a new R package with Rcpp support
+Includes a `src` folder with some C++ files
+Functions need to be registered for CRAN
+`Rcpp` wrapper for function automatically generated
+Can write your roxygen comments in the Rcpp file and it will be automatically transferred to the R file
+
+
