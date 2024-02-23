@@ -10,11 +10,14 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+https://www.acrc.bris.ac.uk/protected/hpc-docs/training/intro-to-hpc-slurm/
+
 ## What is HPC?
 
 High performance computing (HPC) is the use of combined computational power of many individual computers via supercomputers or clusters. 
 
-Prepare jobs on login node, submit jobs to compute notdes
+Prepare jobs on login node, submit jobs to compute nodes
+Do not run jobs on the login nodes!
 
 BlueCrystal Phase 4 is recommended for most workloads
 BluePebble is recommended for high throughput computing (a bit newer than BlueCrystal Phase 4)
@@ -30,4 +33,160 @@ Email hpc-help@bristol.ac.uk for any help with HPC
 rdsf-help@bristol.ac.uk for data storage help
 ask-rse@bristol.ac.uk for help writing software
 
+## Using BlueCrystal
+
+Log in: `ssh aw23877@bc4login.acrc.bris.ac.uk`
+Home directory `/user/home/aw23877`
+
+`file intro2hpc.tar.gz` tells you what kind of file it is
+`gz` means that the file is zipped
+`tar` means that there are many files all stuck together
+`tar xvf intro2hpc.tar.gz` to extract the files (`v` means verbose so it lists the files and shows where they were extracted to)
+
+```{bash eval = FALSE}
+cp ../intro2hpc.tar.gz .
+tar xvf intro2hpc.tar.gz
+cd workshop/
+ls
+```
+
+Job scripts start with `#!/bin/bash`
+The cluster is broken up into partitions for different purposes
+`#SBATCH --partition-test` is for testing out if jobs work
+You have to put in your account number (you might be associated with multiple projects over time, this is for reporting purposes)
+`#SBATCH --account=MATH030984`
+
+`hostname` tells you which node you are on
+`sinfo` tells you which nodes are available
+
+`.sh` is the file extension for a shell script, can also use `slm` for Slurm
+Slurm is the job scheduler
+All Slurm commands start with `s`
+`sbatch` is the command to submit a job: this is a batch supercomputer, which means that jobs are submitted and then run when resources are available
+
+```{bash eval=FALSE}
+sbatch job1.sh
+```
+
+Returns `Submitted batch job 12343792`
+Keep track of the job id and why you submitted that job
+
+Running `sacct` will show you the status of all your jobs
+```
+JobID           JobName  Partition    Account  AllocCPUS      State ExitCode 
+------------ ---------- ---------- ---------- ---------- ---------- -------- 
+12343792        job1.sh       test math030984          0    PENDING      0:0 
+```
+Shows the job ID, name, what partition you are running on, what account you are using
+Tells you how many CPUs are allocated once it's running
+Shows the job state (pending, running, completed, etc.)
+Shows the exit code (0 means it ran successfully)
+`sacct -X` shows you the status of your jobs with just one line per job
+
+`squeue` shows the status of all jobs on the cluster
+`squeue --me` shows the status of your jobs and tells you why something hasn't run yet
+
+If your job ran successfully, you will end up with an output file like `slurm-12343792.out` that includes what would have been printed out if the job was run on your computer
+
+You can put variables inside quotes in bash, e.g. `"${SLURM_SUBMIT_DIR}"`
+
+You can export variables in bash, e.g. `export EXE=/bin/hostname`
+
+Stuff to put at the top of your script:
+```{bash eval=FALSE}
+#SBATCH --partition=teach_cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=0:0:10
+#SBATCH --mem=100M
+#SBATCH --account=MATH030984
+```
+
+`--partition` is the type of node you want to run on
+`--nodes` is the number of nodes you want to run on (almost always one node is sufficient)
+`--ntasks-per-node` is the number of tasks you want to run on each node
+`--cpus-per-task` is the number of CPUs you want to use for each task (if your code can use multiple threads, you can set that here)
+`--time` is the maximum time you want to run for, it's used to balance out the load on the cluster (the shorter this is, the sooner your job will run, but if it's shorter than how long your code will take, it will kill your job)
+`--mem` is the maximum memory you want to use. you can perform experiments to understand how much time and memory your code will take to run
+`--account` is the account you want to use
+`--job-name` is the name of the job
+
+`user-quota` tells you how much disk space you have used up and what the limits are
+
+`module avail` prints out all of the available modules
+`module spider anaconda` searches for anaconda in all of the available modules
+When you log out and log back in, you have to reload all of the modules you need again
+`module load languages/anaconda3` loads the anaconda module (`module unload languages/anaconda3` unloads it)
+`module list` shows you what modules you have loaded currently
+
+## Copying files to and from the supercomputer
+
+You can use `git`
+
+Need to run these commands on your local machine
+
+`scp` allows you to copy files to and from the supercomputer, e.g. `scp aw23877@bc4login.acrc.bris.ac.uk:workshop/script.py .` copies `script.py` from the `workshop` directory on the supercomputer to the current directory on your local machine
+`scp Documents/statistical_computing_2/intro-to-command-line/command-line-files/sandbox/meaning_of_life.txt aw23877@bc4login.acrc.bris.ac.uk:workshop` copies `meaning_of_life.txt` from your local machine to the `workshop` directory on the supercomputer
+
+`rsync` is a more powerful version of `scp` that allows you to copy entire directories
+
+## Simplifying logging in
+
+You can make it easier to log in by editing your `~/.ssh/config` file to specify the host name and your username so you don't have to type it in every time
+```
+Host *
+        AddKeysToAgent yes
+
+Host bc4
+        HostName bc4login.acrc.bris.ac.uk
+        User aw23877
+```
+Now you can just run `ssh bc4` to log into BlueCrystal and `scp meaning_of_life.txt bc4:workshop` for copying
+
+`ssh-keygen -t ed25519` generates a new SSH key
+You should add a passphrase to your SSH key in case someone else gets access to your laptop
+This will write two files: `id_ed25519` is the private key and `id_ed25519.pub` is the public key
+
+`ssh-copy-id bc4` copies your public key to the supercomputer so you don't have to type in your password every time you log in (you only need to run this once per computer)
+
+Now you can run `ssh bc4` without entering your password (you will need to enter the passphrase for your SSH key when you restart your computer, but then you can log in without any password)
+
+## Array jobs
+
+Array jobs are a way to run the same job many times with different inputs
+
+We can edit `script.py` to be the following:
+
+```{python eval = FALSE}
+import sys
+
+data = sys.argv[1]
+
+print(f"Running analysis {data}")
+```
+
+This allows us to pass in a different argument to the script each time we run it, e.g. `python3 script.py 42` will print out `Running analysis 42`
+
+We can now edit our shell script:
+
+```{bash eval = FALSE}
+#!/bin/bash
+#
+#SBATCH --partition=teach_cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=0:0:10
+#SBATCH --mem=100M
+#SBATCH --account=MATH030984
+#SBATCH --job-name="python test"
+#SBATCH	--array=1-5
+
+module load languages/anaconda3
+
+python3 script.py "${SLURM_ARRAY_TASK_ID}"
+```
+
+`--array=1-5` tells Slurm to run the job 5 times with the array task ID set to 1, 2, 3, 4, and 5
 
