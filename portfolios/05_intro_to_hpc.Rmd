@@ -1,0 +1,33 @@
+---
+title: "Introduction to high performance computing"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-02-23"
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## What is HPC?
+
+High performance computing (HPC) is the use of combined computational power of many individual computers via supercomputers or clusters. 
+
+Prepare jobs on login node, submit jobs to compute notdes
+
+BlueCrystal Phase 4 is recommended for most workloads
+BluePebble is recommended for high throughput computing (a bit newer than BlueCrystal Phase 4)
+
+Anything on the HPC is not backed up
+
+Data storage:
++ home directory: fairly small
++ scratch space: 1 TB to store the data (not backed up)
++ RDSF for longer term storage
+
+Email hpc-help@bristol.ac.uk for any help with HPC
+rdsf-help@bristol.ac.uk for data storage help
+ask-rse@bristol.ac.uk for help writing software
+
+
