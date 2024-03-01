@@ -41,7 +41,7 @@ A data race is when two threads try to access the same memory location at the sa
 You want the code within the critical block to be as simple as possible.
 
 `g++ -fopenmp yourfile.cpp -o yourfile -O3` compiles the program with OpenMP support and optimization level 3
-`hyperfile ./yourfile` does benchmarking to check the speed of the program
+`hyperfine ./yourfile` does benchmarking to check the speed of the program
 
 # Reduction
 
@@ -49,3 +49,12 @@ Reduction is a way to combine the results of a parallel loop into a single resul
 
 For example, `pragma omp parallel reduction( + : nloops)` tells the compiler that `nloops` is a reduction variable that will be formed by adding the values of results from each thread. This will be faster than writing a critical section yourself.
 
+`hyperfine ./pi_estimate ./pi_estimate_reduction` compares the benchmark performance of the two programs
+
+# Map/Reduce
+
+Map/Reduce is a programming model for processing and generating large data sets. It is a two-step process: the map step processes the data in parallel, and the reduce step combines the results.
+
+# Overall performance tips
+
+Always experiment by benchmarking your code

@@ -9,14 +9,14 @@ int main() {
     int pts_inside = 0;
     int pts_outside = 0;
 
-    #pragma omp parallel
+    #pragma omp parallel reduction(+ : pts_inside, pts_outside)
     {
         // Set up random number generator stuff
         std::default_random_engine generator(rd());
         std::uniform_real_distribution random(-1.0, 1.0);
 
         // Thread number
-        int thread_id = omp_get_thread_num();
+        // int thread_id = omp_get_thread_num();
 
         // Counters within each thread
         int thread_pts_inside = 0;
@@ -44,12 +44,15 @@ int main() {
         double thread_pi_estimate = 4.0 * thread_pts_inside / (thread_pts_inside + thread_pts_outside);
         double thread_n_pts = thread_pts_inside + thread_pts_outside;
 
+        pts_inside += thread_pts_inside;
+        pts_outside += thread_pts_outside;
+
+        /*
         #pragma omp critical
         {
             std::cout << "Thread " << thread_id << " estimated value of pi: " << thread_pi_estimate << " (includes " << thread_n_pts << " points)" << std::endl;
-            pts_inside += thread_pts_inside;
-            pts_outside += thread_pts_outside;
         }
+        */
         
     }
 
