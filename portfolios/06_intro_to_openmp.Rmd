@@ -1,0 +1,51 @@
+---
+title: "Introduction to OpenMP"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-003-01"
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction to OpenMP
+
+OpenMP gives an interface for parallel programming that works in multiple languages, including C++. Most C++ compilers support OpenMP, including GCC, Clang, and Microsoft Visual C++. 
+
+`#pragma omp parallel` serves as a block annotation for everything in the brackets that follow -- it runs the code on every core available
+  Each parallel thread executes all the code in the parallel section
+`g++ -fopenmp hello_openmp.cpp -o hello_openmp` compiles the program with OpenMP support
+`export OMP_NUM_THREADS=4` sets the number of threads to 4, determining the number of cores used (you can set this on a line-by-line basis as well, e.g. `OMP_NUM_THREADS=4 ./hello_openmp`)
+  This resets when a new terminal window is opened
+
+# Pragmas
+
+Pragmas are compiler directives that give instructions to the compiler. They are written as `#pragma omp` followed by a command. They are only followed if the program is compiled with OpenMP support. Some common pragmas include:
+
++ `#pragma omp parallel` runs the code in the brackets in parallel
++ `#pragma omp sections` divides the code in the brackets into sections, each of which is run in parallel
++ `#pragma omp for` creates a loop where different iterations are run on different cores
+
+SIMD (Single Instruction, Multiple Data) is a parallel processing technique that runs the same instruction on multiple data points. 
+
+Variables defined within the `parallel` block are thread-local, meaning that each thread has its own copy of the variable.
+
+# Critical code
+
+Critical sections of the code are those that must be run by only one thread at a time. This is done with `#pragma omp critical` followed by the code that must be run by only one thread at a time.
+
+A data race is when two threads try to access the same memory location at the same time. This can be avoided by using critical sections.
+
+You want the code within the critical block to be as simple as possible.
+
+`g++ -fopenmp yourfile.cpp -o yourfile -O3` compiles the program with OpenMP support and optimization level 3
+`hyperfile ./yourfile` does benchmarking to check the speed of the program
+
+# Reduction
+
+Reduction is a way to combine the results of a parallel loop into a single result. It is difficult to write efficient code for reduction yourself because it requires a critical section, meaning only one thread is updating the result at a time. OpenMP provides a reduction clause that does this for you.
+
+For example, `pragma omp parallel reduction( + : nloops)` tells the compiler that `nloops` is a reduction variable that will be formed by adding the values of results from each thread. This will be faster than writing a critical section yourself.
+
