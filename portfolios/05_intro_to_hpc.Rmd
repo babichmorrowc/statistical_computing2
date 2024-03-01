@@ -10,83 +10,96 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-https://www.acrc.bris.ac.uk/protected/hpc-docs/training/intro-to-hpc-slurm/
+The following portfolio contains materials covered in ACRC's [Introduciton to High Performance Computing (HPC)](https://www.acrc.bris.ac.uk/protected/hpc-docs/training/intro-to-hpc-slurm/).
 
-## What is HPC?
+# What is HPC?
 
-High performance computing (HPC) is the use of combined computational power of many individual computers via supercomputers or clusters. 
+High performance computing (HPC) is the use of combined computational power of many individual computers via supercomputers or clusters. The following diagram shows the architecture of an HPC system, including both login and compute nodes:
 
-Prepare jobs on login node, submit jobs to compute nodes
-Do not run jobs on the login nodes!
+![Diagram from [ACRC](https://www.acrc.bris.ac.uk/protected/hpc-docs/training/intro-to-hpc-slurm/system_layout.html)][./images/hpc_architecture.jpeg]
 
-BlueCrystal Phase 4 is recommended for most workloads
-BluePebble is recommended for high throughput computing (a bit newer than BlueCrystal Phase 4)
+When running tasks on a supercomputer, you prepare your jobs on the login node and submit the jobs to the compute nodes. It is important to note that you should not run jobs on the login nodes. The following diagram shows the workflow for running a job on a supercomputer:
 
-Anything on the HPC is not backed up
+![Diagram from [ACRC](https://www.acrc.bris.ac.uk/protected/hpc-docs/training/intro-to-hpc-slurm/workflow_overview.html)][./images/hpc_workflow.png]
 
-Data storage:
+# HPC at University of Bristol
+
+At the University of Bristol, we have access to two clusters: BlueCrystal and BluePebble. BlueCrystal Phase 4 is the older of the two and is recommended for most workloads, while BluePebble is recommended for high throughput computing. We can also access regional and national computing facilities including ARCHER2 and Isambard.
+
+It is important to remember that nothing on the HPC is backed up, so you should always ensure that you back up your data. We have access to the following locations for data storage:
 + home directory: fairly small
 + scratch space: 1 TB to store the data (not backed up)
 + RDSF for longer term storage
 
-Email hpc-help@bristol.ac.uk for any help with HPC
-rdsf-help@bristol.ac.uk for data storage help
-ask-rse@bristol.ac.uk for help writing software
+For any issues with HPC at University of Bristol, you can contact the following:
 
-## Using BlueCrystal
++ hpc-help@bristol.ac.uk for any help with HPC
++ rdsf-help@bristol.ac.uk for data storage help
++ ask-rse@bristol.ac.uk for help writing software
 
-Log in: `ssh aw23877@bc4login.acrc.bris.ac.uk`
-Home directory `/user/home/aw23877`
+For the rest of this portfolio, we will be using BlueCrystal.
 
-`file intro2hpc.tar.gz` tells you what kind of file it is
-`gz` means that the file is zipped
-`tar` means that there are many files all stuck together
-`tar xvf intro2hpc.tar.gz` to extract the files (`v` means verbose so it lists the files and shows where they were extracted to)
+## Logging in
+
+We log into clusters using `ssh`, which stands for "secure shell" and is a command-line utility for securely logging into a remote machine and executing commands on that machine. The syntax is `ssh [username]@[hostname]`.
+
+For example, in order for me to log in to BlueCrystal, I run `ssh aw23877@bc4login.acrc.bris.ac.uk`, which lands me in my home directory `/user/home/aw23877`.
+
+## Writing shell scripts
+
+Job shell scripts start with `#!/bin/bash` and typically have the file extension `.sh` (you can also use `.slm` for Slurm as an alternative).
+
+The following is a very simple shell script:
 
 ```{bash eval = FALSE}
-cp ../intro2hpc.tar.gz .
-tar xvf intro2hpc.tar.gz
-cd workshop/
-ls
+#!/bin/bash
+#
+
+#SBATCH --partition=test
+#SBATCH --account=MATH030984
+
+# Change into working directory
+#cd ~/workshop
+
+# Execute code
+/bin/hostname
+
+# Pause to give us time to see the job
+sleep 60
+
 ```
 
-Job scripts start with `#!/bin/bash`
-The cluster is broken up into partitions for different purposes
-`#SBATCH --partition-test` is for testing out if jobs work
-You have to put in your account number (you might be associated with multiple projects over time, this is for reporting purposes)
-`#SBATCH --account=MATH030984`
+Some things to note about this script:
+* `#SBATCH --partition-test` tells us which partition to use, since the cluster is broken up into partitions for different purposes
+  + `test` can be used to test out if jobs work
+* `#SBATCH --account=MATH030984` uses your account number -- you might be associated with multiple projects over time, this is for reporting purposes
+* `hostname` tells you which node you are on
 
-`hostname` tells you which node you are on
 `sinfo` tells you which nodes are available
 
-`.sh` is the file extension for a shell script, can also use `slm` for Slurm
-Slurm is the job scheduler
-All Slurm commands start with `s`
-`sbatch` is the command to submit a job: this is a batch supercomputer, which means that jobs are submitted and then run when resources are available
+## Slurm
+
+Slurm is the job scheduler. All Slurm commands start with `s`. In order to submit a job, we use the command `sbatch`. We are using a batch supercomputer, which means that jobs are submitted and then run when resources are available. To run our shell script `job1.sh`, we can run:
 
 ```{bash eval=FALSE}
 sbatch job1.sh
 ```
 
-Returns `Submitted batch job 12343792`
-Keep track of the job id and why you submitted that job
+This command returns `Submitted batch job 12343792`, for example. That number is the job id. It is best practice to keep track of your job ids and make note of why you submitted them in case you need to revisit them at a later date.
 
-Running `sacct` will show you the status of all your jobs
+Running `sacct` will show you the status of all your jobs, for example:
 ```
 JobID           JobName  Partition    Account  AllocCPUS      State ExitCode 
 ------------ ---------- ---------- ---------- ---------- ---------- -------- 
 12343792        job1.sh       test math030984          0    PENDING      0:0 
 ```
-Shows the job ID, name, what partition you are running on, what account you are using
-Tells you how many CPUs are allocated once it's running
-Shows the job state (pending, running, completed, etc.)
-Shows the exit code (0 means it ran successfully)
-`sacct -X` shows you the status of your jobs with just one line per job
+This output shows the job ID, job name (we will show how to set this later), what partition you are running on, and what account you are using. Once the job is actually running (when State is no longer `PENDING`), it will tell you how many CPUs are allocated. It tells you the job state (pending, running, completed, etc.) and the exit code (0 means it ran successfully).
 
-`squeue` shows the status of all jobs on the cluster
-`squeue --me` shows the status of your jobs and tells you why something hasn't run yet
+Sometimes jobs will be displayed on multiple lines when running `sacct`, so you can add the flag `sacct -X` shows you the status of your jobs with just one line per job.
 
-If your job ran successfully, you will end up with an output file like `slurm-12343792.out` that includes what would have been printed out if the job was run on your computer
+As an alternative to `sacct`, `squeue` shows the status of all jobs on the cluster. `squeue --me` shows the status of just your jobs and tells you why something hasn't run yet.
+
+If your job ran successfully, you will end up with an output file like `slurm-12343792.out` (with that job id number you noted earlier) that includes what would have been printed out if the job was run on your computer.
 
 You can put variables inside quotes in bash, e.g. `"${SLURM_SUBMIT_DIR}"`
 
