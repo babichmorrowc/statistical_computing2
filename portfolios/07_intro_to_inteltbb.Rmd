@@ -19,7 +19,7 @@ Intel-TBB stands for Intel's Threading Building Blocks. It is now a part of some
 
 Both are third-party tools that are not part of C++ itself. OpenMP is a set of compiler directives that you can use to tell the compiler to parallelize your code. Intel-TBB is a C++ template library that you can use to parallelize your code.
 
-Intel-TBB uses standard C++ templates and classes, so it is more portable than OpenMP. 
+Intel-TBB uses standard C++ templates and classes, so it is more portable than OpenMP. It is also more efficient.
 
 # Using Intel-TBB
 
@@ -93,6 +93,18 @@ auto name(arguments)
 // unnamed function in lambda function
 [](arguments){expressions;}
 ```
+
+`[=]` means that the lambda function makes a copy of all the variables in the scope of the function where the lambda function is declared. `[&]` means that the lambda function uses the variables in the scope of the function where the lambda function is declared by reference. It is quicker and uses less memory, but you run the risk of accidentally changing the value of the variable.
+
+# Parallel programming using Intel-TBB
+
+## `tbb::parallel_for`
+
+The `tbb::parallel_for` function is a way to parallelize a for loop. It is a map-type function.
+
+`tbb::blocked_range` is a class that represents a range of values. It is used to divide the range of values into smaller ranges that can be processed in parallel. 
+
+`tbb::parallel_for(RANGE, FUNCTION)`
 
 
 
