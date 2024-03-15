@@ -30,7 +30,7 @@ Neural networks are most commonly trained using backpropagation. Initial weights
 
 # Python environments
 
-Python environments are a copy of Python plus the packages you need. You can create a new environment using Anaconda Navigator by clicking on the `Environments` tab and then `Create`. You can then search for and select the packages you need. For this portfolio, we need `tensorflow`, `scikit-learn`, and `jupyterlab`
+Python environments are a copy of Python plus the packages you need. You can create a new environment using Anaconda Navigator by clicking on the `Environments` tab and then `Create`. You can then search for and select the packages you need. For this portfolio, we need `tensorflow`, `tensorflow-datasets`, `scikit-learn`, `scikit-image`, `jupyterlab`, and `pandas`.
 
 Alternatively, you can do so in the terminal:
 
@@ -43,5 +43,10 @@ python3 -m venv venv
 This code creates a new environment called `nn` and activates it. You can then install packages using `pip`:
 
 ```{bash eval = FALSE}
-venv/bin/pip install tensorflow scikit-learn jupyterlab
+venv/bin/pip install tensorflow tensorflow-datasets scikit-learn jupyterlab pandas
 ```
+
+# Image kernel convolution
+
+
+
