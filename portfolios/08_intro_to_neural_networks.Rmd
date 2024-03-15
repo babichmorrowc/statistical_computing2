@@ -1,0 +1,47 @@
+---
+title: "Introduction to neural networks"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-03-01"
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction to neural networks
+
+Neural networks are a type of machine learning model that are inspired by the human brain. Artificial neurons are a simplification of biological neurons -- they take in multiple inputs and pass on their output to multiple other neurons. A neuron's value is determined by the sum of its inputs ($x_i$), which are weighted by the strength of the connection between the neurons ($w_i$): $$p = \sum_i x_i w_i$$
+This value $p$ is then passed through an activation function $\phi$ to determine the neuron's output $o$: $$o = \phi(p) = \phi\left(\sum_i x_i w_i\right)$$
+This activation function step allows neural networks to model non-linear relationships.
+
+Most neural networks have the following architecture:
+
+![Diagram from [Introduction to Neural Networks](https://milliams.com/courses/neural_networks/Neural%20Networks.html)](./images/nn_architecture.png)
+
+The input layer typically takes on values from the user / data. There are then a number of hidden layers, which are made up of neurons that take in the input layer's values and pass on their output to the next layer. The output layer then takes in the output of the last hidden layer and produces the final output of the network.
+
+Deciding the shape of a neural network is not an exact science. Typically, the size of the hidden layers is similar to the size of the input and output layers. The number of hidden layers represents the level of abstraction
+
+# Training a neural network
+
+Neural networks are most commonly trained using backpropagation. Initial weights can be set randomly. We define a loss function that measures how far off the network's output is from the true value. We then calculate the derivative of the loss function with respect to the weights and adjust the weights accordingly. 
+
+# Python environments
+
+Python environments are a copy of Python plus the packages you need. You can create a new environment using Anaconda Navigator by clicking on the `Environments` tab and then `Create`. You can then search for and select the packages you need. For this portfolio, we need `tensorflow`, `scikit-learn`, and `jupyterlab`
+
+Alternatively, you can do so in the terminal:
+
+```{bash eval = FALSE}
+mkdir nn
+cd nn
+python3 -m venv venv
+```
+
+This code creates a new environment called `nn` and activates it. You can then install packages using `pip`:
+
+```{bash eval = FALSE}
+venv/bin/pip install tensorflow scikit-learn jupyterlab
+```
