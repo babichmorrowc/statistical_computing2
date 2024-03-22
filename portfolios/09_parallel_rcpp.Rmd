@@ -14,9 +14,14 @@ knitr::opts_chunk$set(echo = TRUE)
 In this exercise, we will use a dataset from an Irish smart meter:
 
 ```{r message = FALSE}
-# Install electBook from GitHub
-library(devtools)
-install_github("mfasiolo/electBook")
+# If necessary, install electBook
+if(!require(electBook)) {
+  # Install electBook from GitHub
+  library(devtools)
+  install_github("mfasiolo/electBook")
+}
+
+# Load packages
 library(electBook)
 library(tidyverse)
 
@@ -53,11 +58,8 @@ We want to use the time of day $x$ to predict demand $y$. We will start with the
 
 ```{r}
 reg1D <- function(y, x){
-  
   b <- t(x) %*% y / (t(x) %*% x)  
-  
   return(b)
-  
 }
 ```
 
@@ -75,6 +77,8 @@ lm_beta1 <- lm(y ~ -1 + x)$coeff
 all.equal(beta1[1,1], as.numeric(lm_beta1))
 ```
 
+We see that our function is much faster than `lm` (probably because we aren't computing as many values). Our result for $\beta_1$ is the same as the result from `lm`.
+
 We can visualize the resulting fit:
 
 ```{r}
@@ -89,7 +93,39 @@ This is not a particularly good fit.
 
 ### Question 1
 
-We now want to implement a parallel version of `reg1D` using `RcppParallel`.
+We now want to implement a parallel version of `reg1D` using `RcppParallel` to see if we can achieve even faster performance.
+
+```{r, engine='Rcpp'}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::plugins(openmp)]]
+// [[Rcpp::export]]
+double reg1D_parallel(NumericVector y, NumericVector x) {
+  int n = y.size();
+  double xTy = 0.0;
+  double xTx = 0.0;
+  #pragma omp parallel for reduction(+:xTy, xTx)
+  for(int i = 0; i < n; i++) {
+    xTy += x[i] * y[i];
+    xTx += x[i] * x[i];
+  }
+  
+  return xTy / xTx;
+}
+```
+
+We can check to make sure our new parallelized function yields the same results as `reg1D`, and then compare the performance of the two functions:
+
+```{r}
+beta1_parallel <- reg1D_parallel(y, x)
+all.equal(beta1_parallel, beta1[1,1])
+
+system.time( reg1D(y, x) )[3]
+system.time( reg1D_parallel(y, x) )[3]
+```
+
+We see that our parallelized function is faster than the original function, and it yields the same results.
 
 ## Polynomial regression
 
@@ -97,15 +133,11 @@ We want to improve upon the fit of our linear regression by fitting the polynomi
 
 ```{r}
 regMD <- function(y, X){
-  
   XtX <- t(X) %*% X
-  
   C <- chol(XtX)
-  
-  b <- backsolve(C, forwardsolve(t(C), t(X) %*% y) )
-  
+  z <- forwardsolve(t(C), t(X) %*% y)
+  b <- backsolve(C, z)
   return(b)
-  
 }
 ```
 
@@ -149,6 +181,74 @@ ggplot(data = poly_preds, aes(x = regMD_minus_lm)) +
 ### Question 2
 
 We now want to implement a parallel version of `regMD` using `RcppParallel`.
+
+```{r, engine='Rcpp'}
+// [[Rcpp::depends(RcppArmadillo)]]
+#include <RcppArmadillo.h>
+using namespace Rcpp;
+using namespace arma;
+
+// [[Rcpp::plugins(openmp)]]
+// [[Rcpp::export]]
+NumericVector regMD_parallel(NumericVector y, NumericMatrix X) {
+  int n = y.size();
+  int p = X.ncol();
+  NumericMatrix XtX(p, p);
+  
+  // Compute XtX in parallel
+  #pragma omp parallel for collapse(2)
+  for(int i = 0; i < p; i++) {
+    for(int j = 0; j < p; j++) {
+      for(int k = 0; k < n; k++) {
+        XtX(i, j) += X(k, i) * X(k, j);
+      }
+    }
+  }
+  // Convert XtX to an armadillo matrix
+  arma::mat XtX_arma = as<arma::mat>(XtX);
+  
+  // Compute C
+  arma::mat C_arma = chol(XtX_arma, "upper");
+  
+  // Compute z using forward substitution
+  arma::vec y_arma = as<arma::vec>(y);
+  arma::mat X_arma = as<arma::mat>(X);
+  arma::vec z = solve(C_arma.t(), X_arma.t() * y_arma);
+  
+  // Compute b using back substitution
+  arma::vec b = solve(C_arma, z);
+  // Convert b to NumericVector
+  NumericVector b_Rcpp = wrap(b);
+  
+  return b_Rcpp;
+}
+```
+
+We check to make sure that `regMD_parallel` yields the same results as `regMD`, and then compare the performance:
+
+```{r}
+Beta_parallel <- regMD_parallel(y, X)
+all.equal(Beta_parallel, Beta)
+
+system.time( regMD(y, X) )[3]
+system.time( regMD_parallel(y, X) )[3]
+```
+
+```{r}
+poly_preds <- poly_preds %>% 
+  mutate(regMD_parallel_preds = Xu %*% Beta_parallel)
+
+# Compare values from regMD and regMD_paralel
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  geom_line(data = poly_preds, aes(x = x, y = regMD_preds),
+            color = "red") +
+  geom_line(data = poly_preds, aes(x = x, y = regMD_parallel_preds),
+            color = "green", linetype = "dashed") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+```
+
 
 ## Local polynomial regression
 
