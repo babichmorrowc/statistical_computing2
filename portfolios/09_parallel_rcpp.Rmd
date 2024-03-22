@@ -1,0 +1,241 @@
+---
+title: "Parallel Rcpp"
+author: "Cecina Babich Morrow"
+output: pdf_document
+date: "2024-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Parallel local regression
+
+In this exercise, we will use a dataset from an Irish smart meter:
+
+```{r message = FALSE}
+# Install electBook from GitHub
+library(devtools)
+install_github("mfasiolo/electBook")
+library(electBook)
+library(tidyverse)
+
+data(Irish)
+```
+
+We will concatenate the electricity demand from all households into the vector `y`:
+
+```{r}
+y <- do.call("c", Irish$indCons)
+y <- y - mean(y)
+str(y)
+```
+
+We can plot a subset of the demand over time (on the x-axis):
+
+```{r}
+ncust <- ncol(Irish$indCons) 
+
+x <- rep(Irish$extra$tod, ncust)
+
+n <- length(x)
+ss <- sample(1:n, 1e4)
+subset_data <- data.frame(x = x[ss], y = y[ss])
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+```
+
+## Linear regression
+
+We want to use the time of day $x$ to predict demand $y$. We will start with the model $\mathbb{E}(y|x) = \beta_1x)$. This function fits the model using least squares:
+
+```{r}
+reg1D <- function(y, x){
+  
+  b <- t(x) %*% y / (t(x) %*% x)  
+  
+  return(b)
+  
+}
+```
+
+We can compare the speed of our function with `lm`:
+
+```{r}
+# Compare speed
+system.time( lm(y ~ -1 + x)$coeff )[3]
+system.time( reg1D(y, x) )[3]
+
+# Calculate beta_1 using reg1D
+beta1 <- reg1D(y, x)
+# Check if the result from reg1D is equal to the result from lm
+lm_beta1 <- lm(y ~ -1 + x)$coeff
+all.equal(beta1[1,1], as.numeric(lm_beta1))
+```
+
+We can visualize the resulting fit:
+
+```{r}
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  geom_abline(slope = beta1, intercept = 0, color = "red") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+```
+
+This is not a particularly good fit.
+
+### Question 1
+
+We now want to implement a parallel version of `reg1D` using `RcppParallel`.
+
+## Polynomial regression
+
+We want to improve upon the fit of our linear regression by fitting the polynomial regression $\mathbb{E}(y | x) = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3$. We can write a function that calculates the Cholesky decomposition $\mathbf{C}^\top \mathbf{C} = \mathbf{X}^\top \mathbf{X}$ where $\mathbf{C}$ is upper triangular. Then $\hat{\beta} = \mathbf{C}^{-1}\mathbf{C}^{-\top}\mathbf{X}^\top\mathbf{y}$. This can be solved by computing $\mathbf{z} = \mathbf{C}^{-\top}\mathbf{X}^\top\mathbf{y}$ by forward-solving the lower-triangular system and then $\hat{\beta} = \mathbf{C}^{-1}\mathbf{z}$ by back-solving the upper-triangular system:
+
+```{r}
+regMD <- function(y, X){
+  
+  XtX <- t(X) %*% X
+  
+  C <- chol(XtX)
+  
+  b <- backsolve(C, forwardsolve(t(C), t(X) %*% y) )
+  
+  return(b)
+  
+}
+```
+
+We can test out our function:
+
+```{r}
+X <- cbind(1, x, x^2, x^3)
+Beta <- regMD(y, X)
+
+# Compare to beta from lm
+Beta_lm <- lm(y ~ -1 + X)$coeff
+
+Xu <- cbind(1, 0:47, (0:47)^2, (0:47)^3)
+
+poly_preds <- data.frame(x = 0:47,
+                         regMD_preds = Xu %*% Beta,
+                         lm_preds = Xu %*% Beta_lm) %>% 
+  mutate(regMD_minus_lm = regMD_preds - lm_preds)
+
+# Compare values from regMD and lm
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  geom_line(data = poly_preds, aes(x = x, y = regMD_preds),
+            color = "red") +
+  geom_line(data = poly_preds, aes(x = x, y = lm_preds),
+            color = "black", linetype = "dashed") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+```
+
+We can see that the fits are almost identical (and much better than the linear regression). We can compare the exact values to see that we have slightly different predictions:
+
+```{r}
+# Compare values from regMD and lm
+ggplot(data = poly_preds, aes(x = regMD_minus_lm)) +
+  geom_histogram(bins = 20) +
+  labs(x = "regMD predictions - lm predictions") +
+  theme_bw()
+```
+
+### Question 2
+
+We now want to implement a parallel version of `regMD` using `RcppParallel`.
+
+## Local polynomial regression
+
+The following function fits a basic one-dimensional local polynomial regression using a Gaussian kernel:
+
+```{r}
+regMD_local <- function(y, X, x0, x, h){
+  
+  w <- dnorm(x0, x, h)
+  w <- w / sum(x) * length(y)
+  
+  wY <- y * sqrt(w)
+  wX <- X * sqrt(w)
+  wXtwX <- t(wX) %*% wX
+  
+  C <- chol(wXtwX)
+  
+  b <- backsolve(C, forwardsolve(t(C), t(wX) %*% wY) )
+  
+  return(b)
+  
+}
+```
+
+We can check our results against `lm` again:
+
+```{r}
+b_lpr <- regMD_local(y, X, x0 = 35, x = x, h = 5)
+lm_b_lpr <- lm(y ~ -1 + X, weights = dnorm(35, x, 5))$coeff
+
+lpr_preds <- data.frame(x = 0:47,
+                         regMD_local_preds = Xu %*% b_lpr,
+                         lm_preds = Xu %*% lm_b_lpr) %>% 
+  mutate(regMD_local_minus_lm = regMD_local_preds - lm_preds)
+
+# Compare values from regMD_local and lm
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  geom_line(data = lpr_preds, aes(x = x, y = regMD_local_preds),
+            color = "red") +
+  geom_line(data = lpr_preds, aes(x = x, y = lm_preds),
+            color = "black", linetype = "dashed") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+
+ggplot(data = lpr_preds, aes(x = regMD_local_minus_lm)) +
+  geom_histogram(bins = 20) +
+  labs(x = "regMD_local predictions - lm predictions") +
+  theme_bw()
+```
+
+We see very similar results to `lm`, but it does seem like our `regMD_local` function skews slightly lower than the predictions from `lm`.
+
+### Question 3
+
+We now want to implement a parallel version of `regMD_local` using `RcppParallel`.
+
+## Question 4
+
+Consider the following:
+
+```{r}
+x_test <- c(100, 200, 300)
+w <- dnorm(0, x_test, 1)
+(w <- w / sum(x_test))
+```
+
+All of the weights are 0. To compute this in a numerically stable way, we do the following:
+
+```{r}
+lw <- dnorm(0, x_test, 1, log = TRUE)
+mlw <- max(lw)
+( w <- exp(lw - mlw) / sum(exp(lw - mlw)) ) 
+```
+
+This solution is preferable because
+
+### Question 4
+
+We now want to implement a parallel version of this.
+
+## Adding new data
+
+When new data becomes available, we can update the model matrix in the following way: $\mathbf{X} \leftarrow [\mathbf{X}^\top_{\text{old}}, \mathbf{X}^\top_{\text{new}}]^\top$.
+
+### Question 5
+
+We want to efficiently update our fit given that we have stored $\mathbf{X}^\top_{\text{old}} \mathbf{W}_{\text{old}}\mathbf{X}_{\text{old}}$.
+
+
