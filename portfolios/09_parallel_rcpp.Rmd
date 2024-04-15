@@ -67,7 +67,9 @@ We can compare the speed of our function with `lm`:
 
 ```{r}
 # Compare speed
+# lm
 system.time( lm(y ~ -1 + x)$coeff )[3]
+# reg1D
 system.time( reg1D(y, x) )[3]
 
 # Calculate beta_1 using reg1D
@@ -97,6 +99,7 @@ We now want to implement a parallel version of `reg1D` using `RcppParallel` to s
 
 ```{r, engine='Rcpp'}
 #include <Rcpp.h>
+#include <omp.h>
 using namespace Rcpp;
 
 // [[Rcpp::plugins(openmp)]]
@@ -121,6 +124,7 @@ We can check to make sure our new parallelized function yields the same results 
 beta1_parallel <- reg1D_parallel(y, x)
 all.equal(beta1_parallel, beta1[1,1])
 
+# Compare speed
 system.time( reg1D(y, x) )[3]
 system.time( reg1D_parallel(y, x) )[3]
 ```
@@ -185,6 +189,7 @@ We now want to implement a parallel version of `regMD` using `RcppParallel`.
 ```{r, engine='Rcpp'}
 // [[Rcpp::depends(RcppArmadillo)]]
 #include <RcppArmadillo.h>
+#include <omp.h>
 using namespace Rcpp;
 using namespace arma;
 
@@ -194,6 +199,7 @@ NumericVector regMD_parallel(NumericVector y, NumericMatrix X) {
   int n = y.size();
   int p = X.ncol();
   NumericMatrix XtX(p, p);
+  NumericVector Xty(p);
   
   // Compute XtX in parallel
   #pragma omp parallel for collapse(2)
@@ -210,10 +216,17 @@ NumericVector regMD_parallel(NumericVector y, NumericMatrix X) {
   // Compute C
   arma::mat C_arma = chol(XtX_arma, "upper");
   
+  // Compute Xty in parallel
+  #pragma omp parallel for
+  for(int i = 0; i < p; i++) {
+    for(int k = 0; k < n; k++) {
+      Xty[i] += X(k, i) * y[k];
+    }
+  }
+  
   // Compute z using forward substitution
-  arma::vec y_arma = as<arma::vec>(y);
-  arma::mat X_arma = as<arma::mat>(X);
-  arma::vec z = solve(C_arma.t(), X_arma.t() * y_arma);
+  arma::vec Xty_arma = as<arma::vec>(Xty);
+  arma::vec z = solve(C_arma.t(), Xty_arma);
   
   // Compute b using back substitution
   arma::vec b = solve(C_arma, z);
@@ -224,31 +237,19 @@ NumericVector regMD_parallel(NumericVector y, NumericMatrix X) {
 }
 ```
 
-We check to make sure that `regMD_parallel` yields the same results as `regMD`, and then compare the performance:
+We check to make sure that `regMD_parallel` yields the same results as `regMD`, and then compare the performance of `lm`, `regMD`, and `regMD_parallel`:
 
 ```{r}
 Beta_parallel <- regMD_parallel(y, X)
 all.equal(Beta_parallel, Beta)
 
-system.time( regMD(y, X) )[3]
-system.time( regMD_parallel(y, X) )[3]
+# Compare speeds
+system.time( lm(y ~ -1 + X)$coeff )[3] # 8.987
+system.time( regMD(y, X) )[3] # 1.56
+system.time( regMD_parallel(y, X) )[3] # 0.847 -> 0.191
 ```
 
-```{r}
-poly_preds <- poly_preds %>% 
-  mutate(regMD_parallel_preds = Xu %*% Beta_parallel)
-
-# Compare values from regMD and regMD_paralel
-ggplot(subset_data, aes(x = x, y = y)) +
-  geom_point(color = "grey") +
-  geom_line(data = poly_preds, aes(x = x, y = regMD_preds),
-            color = "red") +
-  geom_line(data = poly_preds, aes(x = x, y = regMD_parallel_preds),
-            color = "green", linetype = "dashed") +
-  labs(x = "Time of day", y = "Demand") +
-  theme_bw()
-```
-
+We once again see that our initial function is much faster than using `lm`, and our parallelized function is the fastest of all.
 
 ## Local polynomial regression
 
@@ -256,9 +257,9 @@ The following function fits a basic one-dimensional local polynomial regression 
 
 ```{r}
 regMD_local <- function(y, X, x0, x, h){
-  
+  # Weights
   w <- dnorm(x0, x, h)
-  w <- w / sum(x) * length(y)
+  w <- w / sum(x) * length(y) # Normalize weights
   
   wY <- y * sqrt(w)
   wX <- X * sqrt(w)
@@ -266,10 +267,11 @@ regMD_local <- function(y, X, x0, x, h){
   
   C <- chol(wXtwX)
   
-  b <- backsolve(C, forwardsolve(t(C), t(wX) %*% wY) )
+  z <- forwardsolve(t(C), t(wX) %*% wY)
+  
+  b <- backsolve(C, z)
   
   return(b)
-  
 }
 ```
 
@@ -302,9 +304,107 @@ ggplot(data = lpr_preds, aes(x = regMD_local_minus_lm)) +
 
 We see very similar results to `lm`, but it does seem like our `regMD_local` function skews slightly lower than the predictions from `lm`.
 
+The following code evaluates the fitted function at various times of day (but it does take awhile to run):
+
+```{r}
+f <- lapply(0:47, function(.x ) regMD_local(y, X, x0 = .x, x = x, h = 5))
+
+plot(x[ss], y[ss], col = "grey")
+lines(0:47, sapply(1:48, function(ii) Xu[ii, ] %*% f[[ii]]), col = 2, lwd = 3, type = 'b')
+```
+
+We see a pretty reasonable prediction.
+
 ### Question 3
 
 We now want to implement a parallel version of `regMD_local` using `RcppParallel`.
+
+```{r engine='Rcpp'}
+// [[Rcpp::depends(RcppArmadillo)]]
+#include <RcppArmadillo.h>
+#include <omp.h>
+using namespace Rcpp;
+using namespace arma;
+
+// [[Rcpp::plugins(openmp)]]
+// [[Rcpp::export]]
+mat regMD_local_parallel(NumericVector y, NumericMatrix X, double x0, NumericVector x, double h) {
+  int n = y.size();
+  int p = X.ncol();
+  NumericVector w(n);
+  NumericMatrix wX(n, p);
+  NumericVector wY(n);
+  
+  // Compute weights in parallel
+  // Compute sum of x
+  double sum_x = sum(x);
+  #pragma omp parallel for
+  for(int i = 0; i < n; i++) {
+    w[i] = R::dnorm(x0, x[i], h, 0) / sum_x * n;
+  }
+  
+  // Compute wX and wY in parallel
+  #pragma omp parallel for
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < p; j++) {
+      wX(i, j) = X(i, j) * sqrt(w[i]);
+    }
+    wY[i] = y[i] * sqrt(w[i]);
+  }
+  
+  // Compute wXtwX in parallel
+  NumericMatrix wXtwX(p, p);
+  #pragma omp parallel for collapse(2)
+  for(int i = 0; i < p; i++) {
+    for(int j = 0; j < p; j++) {
+      for(int k = 0; k < n; k++) {
+        wXtwX(i, j) += wX(k, i) * wX(k, j);
+      }
+    }
+  }
+  
+  // Convert wXtwX to an armadillo matrix
+  arma::mat wXtwX_arma = as<arma::mat>(wXtwX);
+  
+  // Compute C
+  arma::mat C_arma = chol(wXtwX_arma, "upper");
+  
+  // Compute wXtwy in parallel
+  NumericVector wXtwy(p);
+  #pragma omp parallel for
+  for(int i = 0; i < p; i++) {
+    for(int k = 0; k < n; k++) {
+      wXtwy[i] += wX(k, i) * wY[k];
+    }
+  }
+  
+  // Compute z using forward substitution
+  arma::vec wXtwy_arma = as<arma::vec>(wXtwy);
+  arma::vec z = solve(C_arma.t(), wXtwy_arma);
+  
+  // Compute b using back substitution
+  /*arma::vec b = solve(C_arma, z);
+  // Convert b to NumericVector
+  NumericVector b_Rcpp = wrap(b);
+  
+  return b_Rcpp;
+   */
+  return C_arma;
+}
+```
+
+We check to make sure that `regMD_local_parallel` yields the same results as `regMD_local`, and then compare the performance:
+
+```{r}
+b_lpr_parallel_test <- regMD_local_parallel(y, X, x0 = 35, x = x, h = 5)
+
+b_lpr_parallel <- regMD_local_parallel(y, X, x0 = 35, x = x, h = 5)
+
+# Compare speeds
+system.time( lm(y ~ -1 + X, weights = dnorm(35, x, 5))$coeff )[3] # 13.142
+system.time( regMD_local(y, X, x0 = 35, x = x, h = 5) )[3] # 3.218
+# system.time( regMD_local_parallel(y, X, x0 = 35, x = x, h = 5) )[3] 
+```
 
 ## Question 4
 
