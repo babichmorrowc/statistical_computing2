@@ -2,7 +2,7 @@
 title: "Introduction to Intel-TBB"
 author: "Cecina Babich Morrow"
 output: pdf_document
-date: "2024-03-01"
+date: "2024-04-13"
 urlcolor: blue
 ---
 
@@ -10,18 +10,17 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+The following portfolio contains materials covered in Dr. Christopher Wood's course [Parallel Programming with C++](http://chryswoods.com/parallel_c++/).
+
 # Introduction to Intel-TBB
 
-Intel-TBB stands for Intel's Threading Building Blocks. It is now a part of something called oneAPI, which is a set of tools and libraries that Intel has developed to help you leverage the power of multi-core processors. Intel-TBB is a C++ template library for parallel programming. 
-
+Intel-TBB, which stands for Intel's Threading Building Blocks, is a C++ template library for parallel programming. It is now a part of something called oneAPI, which is a set of tools and libraries that Intel has developed to help leverage the power of multi-core processors.
 
 ## OpenMP vs. Intel-TBB
 
-Both are third-party tools that are not part of C++ itself. OpenMP is a set of compiler directives that you can use to tell the compiler to parallelize your code. Intel-TBB is a C++ template library that you can use to parallelize your code.
+Both OpenMP and Intel-TBB are third-party tools for parallelization that are not part of C++ itself. OpenMP is a set of compiler directives that you can use to tell the compiler to parallelize your code, while Intel-TBB is a C++ template library that you can use to write parallel code. Intel-TBB uses standard C++ templates and classes, so it is more portable than OpenMP. It is also more efficient. However, it has a steeper learning curve than OpenMP.
 
-Intel-TBB uses standard C++ templates and classes, so it is more portable than OpenMP. It is also more efficient.
-
-# Using Intel-TBB
+## Compiling with Intel-TBB
 
 The following code compiles a C++ program using Intel-TBB. 
 
@@ -38,12 +37,11 @@ Components of the command:
 
 # Functional programming
 
-Intel-TBB is based on functional programming, which is a programming paradigm that treats functions as objects. 
-Functional programming works easily in R and Python since you can use functions as arguments of other functions natively. Things are a bit more complicated with C++ since C++ relies on variable types. The type of a variable tells you want you can do with that variable and what happens when you act on it. The code referring to a function is a type in C++ just like `int` or `double`, but the syntax gets complicated. For example, the type of a function that takes two `int` arguments and returns an `int` is `int (*)(int, int)`. Fortunately, we can use `auto` instead to avoid needing to write out the type of a function in that way.
+Intel-TBB is based on functional programming, which is a programming paradigm that treats functions as objects. Functional programming works easily in R and Python since you can use functions as arguments of other functions natively. Things are a bit more complicated with C++ since C++ relies on variable types. The type of a variable tells you want you can do with that variable and what happens when you act on it. The code referring to a function is a type in C++ just like `int` or `double`, but the syntax gets complicated. For example, the type of a function that takes two `int` arguments and returns an `int` is `int (*)(int, int)`. Fortunately, we can use `auto` instead to avoid needing to write out the type of a function in that way.
 
 ## Functions as arguments
 
-A template in C++ is a way to write a function or a class without specifying the type of the arguments or the class members. This is useful when you want to write a function or a class that can work with different types of arguments or class members. For example:
+A template in C++ is a way to write a function or a class without specifying the type of the arguments or the class members. This is useful when you want to write a function or a class that can work with different types of arguments or class members. The following is an example of a template function that takes a function and two arguments and returns the result of calling the function with the two arguments:
 
 ```{Rcpp eval=FALSE}
 template<class FUNC, class ARG1, class ARG2>
@@ -58,20 +56,198 @@ In this example, `FUNC` is the type of the function, and `ARG1` and `ARG2` are t
 
 This means that you can pass function names to other functions. By changing the arguments to a function, you can completely change the function's behavior.
 
-## Mapping functions
+We can use a template to avoid having to write a new function for printing vectors for every type of vector. The following is a function that works with any type of vector:
 
-What if we don't want to write a new function for printing vectors for every type of vector? We can use a template to write a function that works with any type of vector. 
+```{Rcpp eval=FALSE}
+template<class T>
+void print_vector(const std::vector<T> &values)
+  // const: function doesn't change the vector
+  // & is reference: function doesn't make a copy of the vector, but uses the original
+{
+  std::cout << "[";
+  
+  for (const T &value : values)
+  {
+    std::cout << " " << value;
+  }
+  
+  std::cout << " ]" << std::endl;
+}
+```
 
-We want to move away from loops, which specify a given order for processing the code. By switching to mapping instead, we are allowing flexibility in the order, which will enable parallel processing.
+## Mapping / Reducing
 
-## Reductions
+Functional programming is based on two main concepts: mapping and reducing. These can be distinguished by the number of inputs and outputs they have:
 
-A reduction takes a vector as an input and returns a single value, e.g. the sum of all the elements.
-
-| **Output / Input** | 1         | N      |
+| **Output / Input** | 1         | $N$    |
 | ------------------ | --------- | ----   |
 | 1                  | function  | reduce |
-| N                  | generator | map    |
+| $N$                | generator | map    |
+
+### Mapping functions
+
+Mapping is the process of applying the same function to every element of a vector (going from $N$ inputs to $N$ outputs). We want to move away from loops, which specify a given order for processing the code. By switching to mapping instead, we are allowing flexibility in the order, which will enable parallel processing.
+
+The following code maps a function to two vectors, showing examples of mapping addition, substraction, and multiplication:
+
+```{Rcpp eval = FALSE}
+#include <iostream>
+#include <vector>
+
+
+template<class FUNC, class T>
+auto map(FUNC func, const std::vector<T> &arg1, const std::vector<T> &arg2)
+{
+  int nvalues = std::min( arg1.size(), arg2.size() );
+  
+  auto result = std::vector<T>(nvalues);
+  
+  for (int i=0; i<nvalues; ++i)
+  {
+    result[i] = func(arg1[i], arg2[i]);
+  }
+  
+  return result;
+}
+
+int sum(int x, int y)
+{
+  return x + y;
+}
+
+int difference(int x, int y)
+{
+  return x - y;
+}
+
+int multiply(int x, int y)
+{
+  return x * y;
+}
+
+template<class T>
+void print_vector(const std::vector<T> &values)
+  // const: function doesn't change the vector
+  // & is reference: function doesn't make a copy of the vector, but uses the original
+{
+  std::cout << "[";
+  
+  for (const T &value : values)
+  {
+    std::cout << " " << value;
+  }
+  
+  std::cout << " ]" << std::endl;
+}
+
+int main()
+{
+  auto a = std::vector<int>( { 1, 2, 3, 4, 5 } );
+  auto b = std::vector<int>( { 6, 7, 8, 9, 10 } );
+  
+  auto result = map( sum, a, b );
+  print_vector(result);
+  
+  result = map( difference, a, b );
+  print_vector(result);
+  
+  result = map( multiply, a, b );
+  print_vector(result);
+  
+  return 0;
+}
+```
+
+We can compile and see the output:
+
+```{bash}
+g++ --std=c++14 ../intro_to_intel_tbb/workshop/map.cpp -o ../intro_to_intel_tbb/workshop/map
+../intro_to_intel_tbb/workshop/map
+```
+
+The following code maps the `count_lines` function over every file in a folder of Shakespeare plays (see [this folder](https://github.com/babichmorrowc/statistical_computing2/tree/main/intro_to_intel_tbb/workshop/include) for the files `part1.h` and `filecounter.h`):
+
+```{Rcpp eval= FALSE}
+#include "part1.h"
+#include "filecounter.h"
+
+using namespace part1;
+using namespace filecounter;
+
+int main(int argc, char **argv) // gives you access to command line arguments
+{
+  auto filenames = get_arguments(argc, argv);
+  auto results = map(count_lines, filenames);
+  
+  for (int i = 0; i < filenames.size(); i++)
+  {
+    std::cout << filenames[i] << " has " << results[i] << " lines." << std::endl;
+  }
+  
+  return 0;
+  
+}
+```
+
+We can see the output:
+
+```{bash}
+../intro_to_intel_tbb/workshop/countlines ../intro_to_intel_tbb/workshop/shakespeare/*
+```
+
+### Reductions
+
+A reduction takes a vector as an input and returns a single value, e.g. the sum of all the elements ($N$ inputs to 1 output). The following code shows an example of a reduction function:
+
+```{Rcpp eval=FALSE}
+template<class FUNC, class T>
+T reduce(FUNC func, const std::vector<T> &values)
+{
+    if (values.empty())
+    {
+        return T();
+    }
+    else
+    {
+        T result = values[0];
+
+        for (size_t i=1; i<values.size(); ++i)
+        {
+            result = func(result, values[i]);
+        }
+
+        return result;
+    }
+}
+```
+
+We can use this `reduce` function to sum the line counts of all the files in the Shakespeare folder:
+
+```{Rcpp eval = FALSE}
+#include "part1.h"
+#include "filecounter.h"
+
+using namespace part1;
+using namespace filecounter;
+
+int main(int argc, char **argv) // gives you access to command line arguments
+{
+  auto filenames = get_arguments(argc, argv);
+  auto results = map(count_lines, filenames);
+  auto total = reduce(sum, results);
+  
+  std::cout << "Total number of lines: " << total << std::endl;
+  
+  return 0;
+  
+}
+```
+
+We see the output:
+
+```{bash}
+../intro_to_intel_tbb/workshop/countlines_reduce ../intro_to_intel_tbb/workshop/shakespeare/*
+```
 
 ## Lambda functions
 
@@ -97,6 +273,8 @@ auto name(arguments)
 `[=]` means that the lambda function makes a copy of all the variables in the scope of the function where the lambda function is declared. `[&]` means that the lambda function uses the variables in the scope of the function where the lambda function is declared by reference. It is quicker and uses less memory, but you run the risk of accidentally changing the value of the variable.
 
 # Parallel programming using Intel-TBB
+
+
 
 ## `tbb::parallel_for`
 
