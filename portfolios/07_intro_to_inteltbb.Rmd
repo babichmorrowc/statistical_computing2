@@ -2,7 +2,7 @@
 title: "Introduction to Intel-TBB"
 author: "Cecina Babich Morrow"
 output: pdf_document
-date: "2024-04-13"
+date: "2024-04-23"
 urlcolor: blue
 ---
 
@@ -253,7 +253,7 @@ We see the output:
 
 Lambda functions, also known as anonymous functions, are a way to declare a function without needing to name it and assign it to a variable. They are useful when you want to pass a function as an argument to another function, but you aren't going to be reusing that function and it doesn't make sense to declare it separately. The syntax for lambda functions uses `[](){}`:
 
-* Within `[]` 
+* Within `[]` you put the capture list, which specifies which external variables are accessible within the lambda function and whether they are copied by reference or by value
 * Within `()` you put the arguments of the function, specifying the types as usual
 * Within `{}` you put the body of the function
 
@@ -270,21 +270,127 @@ auto name(arguments)
 [](arguments){expressions;}
 ```
 
-`[=]` means that the lambda function makes a copy of all the variables in the scope of the function where the lambda function is declared. `[&]` means that the lambda function uses the variables in the scope of the function where the lambda function is declared by reference. It is quicker and uses less memory, but you run the risk of accidentally changing the value of the variable.
+There are various options of what you can put in the capture clause. For instance:
++ `[=]` means that the lambda function makes a copy of all the variables in the scope of the function where the lambda function is declared
++ `[&]` means that the lambda function uses the variables in the scope of the function where the lambda function is declared by reference. (It is quicker and uses less memory, but you run the risk of accidentally changing the value of the variable.)
++ `[x]` captures `x` by value
++ `[&x]` captures `x` by reference
++ `[x, &y]` captures `x` by value and `y` by reference
 
 # Parallel programming using Intel-TBB
 
-
+Using this functinal programming style enables us to write code in a way such that it can be run in parallel.
 
 ## `tbb::parallel_for`
 
-The `tbb::parallel_for` function is a way to parallelize a for loop. It is a map-type function.
+The `tbb::parallel_for` function is a map-type function that allows us to parallelize a for loop. It has the syntax `tbb::parallel_for(range, function)`, where `range` is the set of values over which we want to iterate, and `function` is the function to apply to each subset of range values. The following code shows an example of using `tbb::parallel_for`:
 
-`tbb::blocked_range` is a class that represents a range of values. It is used to divide the range of values into smaller ranges that can be processed in parallel. 
+```{Rcpp eval = FALSE}
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <tbb/parallel_for.h>
 
-`tbb::parallel_for(RANGE, FUNCTION)`
+int main(int argc, char **argv)
+{
+  auto values = std::vector<double>(10000);
+  
+  tbb::parallel_for(
+    
+    // Entire range of values
+    tbb::blocked_range<int>(0, values.size()),
+    
+    // This is what each thread will do:
+    [&](tbb::blocked_range<int> r){
+      for (int i=r.begin(); i<r.end(); ++i)
+      {
+        values[i] = std::sin(i * 0.001);
+      }
+    }
+    
+  );
+  
+  double total = 0;
+  
+  for (double value : values)
+  {
+    total += value;
+  }
+  
+  std::cout << total << std::endl;
+  
+  return 0;
+}
+```
 
+`tbb::blocked_range` is a class that represents a range of values which can be divided into smaller ranges that can be processed in parallel. Here, it defines the range of indices from `0` to `values.size()` for processing in parallel. The lambda function `([&](tbb::blocked_range<int> r) {...})` is then executed in parallel for a subrange of indices `r`.
 
+We can compile and see the output as follows:
 
+```{bash}
+g++ --std=c++14 ../intro_to_intel_tbb/workshop/parallel_for.cpp -Iinclude -ltbb -o \
+  ../intro_to_intel_tbb/workshop/parallel_for
+../intro_to_intel_tbb/workshop/parallel_for
+```
 
+Note that after computing each element of `values` in parallel, we add them to `total` one at a time using a for loop to avoid multiple threads trying to read / write to `total` concurrently. If we wanted to parallelize this loop as well, we would need to use a parallel form of a reduction.
 
+## `tbb::parallel_reduce`
+
+`tbb::parallel_reduce` is the reduction counterpart to `tbb::parallel_for`. It has the syntax `tbb::parallel_for(range, identity_value, function, reduction function)`, where:
+
++ `range` is the same as in `tbb::parallel_for`
++ `identity_value` is the starting value for reduction, e.g. typically 0.0 for addition or 1.0 for multiplication
++ `function` is a lambda function as in `tbb::parallel_for`
++ `reduction_function` is the function being used to reduce the values, e.g. `std::plus<double>()` to reduce doubles using addition
+
+We can now edit our code from earlier to parallelize the loop for calculating `total` as well:
+
+```{Rcpp eval = FALSE}
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <tbb/parallel_for.h>
+
+int main(int argc, char **argv)
+{
+  auto values = std::vector<double>(10000);
+  
+  tbb::parallel_for(
+    tbb::blocked_range<int>(0, values.size()),
+    [&](tbb::blocked_range<int> r){
+      for (int i=r.begin(); i<r.end(); ++i)
+      {
+        values[i] = std::sin(i * 0.001);
+      }
+    }
+  );
+  
+  auto total = tbb::parallel_reduce( 
+    tbb::blocked_range<int>(0,values.size()),
+    0.0,
+    [&](tbb::blocked_range<int> r, double running_total)
+    {
+      for (int i=r.begin(); i<r.end(); ++i)
+      {
+        running_total += values[i];
+      }
+      
+      return running_total;
+    }, std::plus<double>() );
+  
+  std::cout << total << std::endl;
+  
+  return 0;
+}
+```
+
+Compiling to check our work:
+
+We can compile and see the output as follows:
+
+```{bash}
+g++ --std=c++14 ../intro_to_intel_tbb/workshop/parallel_reduce.cpp -Iinclude -ltbb -o \
+  ../intro_to_intel_tbb/workshop/parallel_reduce
+../intro_to_intel_tbb/workshop/parallel_reduce
+```
