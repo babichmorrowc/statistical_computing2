@@ -1,5 +1,5 @@
 ---
-title: "Introduction to neural networks"
+title: "Neural Network Notes"
 author: "Cecina Babich Morrow"
 output: pdf_document
 date: "2024-03-01"
@@ -22,7 +22,7 @@ Most neural networks have the following architecture:
 
 The input layer typically takes on values from the user / data. There are then a number of hidden layers, which are made up of neurons that take in the input layer's values and pass on their output to the next layer. The output layer then takes in the output of the last hidden layer and produces the final output of the network.
 
-Deciding the shape of a neural network is not an exact science. Typically, the size of the hidden layers is similar to the size of the input and output layers. The number of hidden layers represents the level of abstraction
+Deciding the shape of a neural network is not an exact science. Typically, the size of the hidden layers is similar to the size of the input and output layers. The number of hidden layers represents the level of abstraction the network can learn.
 
 # Training a neural network
 

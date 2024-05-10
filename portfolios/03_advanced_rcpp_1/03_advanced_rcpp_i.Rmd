@@ -9,9 +9,9 @@ date: "2024-02-09"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Local polynomial regression
+# Local polynomial regression
 
-### Load the data
+## Load the data
 
 We have the following data set on solar electricity production in Sidney, Australia:
 
@@ -34,7 +34,7 @@ ggplot(solarAU,
        scale_fill_gradientn(colours = viridis(50))
 ```
 
-### Q1: Linear regression model
+## Q1: Linear regression model
 
 We want to model $\mathbb{E}(y | \mathbf{x})$ where $y$ is the log-production and $\mathbf{x} = \{ \text{tod}, \text{toy}\}$. We will use a polynomial regression model of degree 2: $$\mathbb{E}(y | \mathbf{x}) = \beta_0 + \beta_1 \text{tod} + \beta_2 \text{tod}^2 + \beta_3 \text{toy} + \beta_4 \text{toy}^2 = \tilde{\mathbf{x}}^\top \beta$$
 where $\tilde{\mathbf{x}} = \{\text{tod}, \text{tod}^2, \text{toy}, \text{toy}^2\}$.
@@ -116,7 +116,7 @@ grid.arrange(fitted_plot, resid_plot, ncol = 2)
 
 The plot of residuals shows a non-linear pattern, suggesting that the model is not a good fit for the data.
 
-### Q2: Local least squares regression
+## Q2: Local least squares regression
 
 We will now let the regression coefficients be a function of $\mathbf{x}$, i.e. $\hat{\beta} = \hat{\beta}(\mathbf{x})$. For a given $\mathbf{x}_0$, $$\hat{\beta}(\mathbf{x}_0) = \arg\min_{\beta} \sum_{i=1}^n \kappa_{\mathbf{H}}(\mathbf{x}_0 - \mathbf{x}_i) (y_i - \tilde{\mathbf{x}}_i^\top \beta)^2$$
 where $\kappa_H$ is a density kernel with positive definite bandwidth matrix $\mathbf{H}$.
@@ -184,7 +184,7 @@ grid.arrange(fitted_plot, resid_plot, ncol = 2)
 
 We no longer have a pattern in the residuals, and our fitted values closely resemble our original data.
 
-Let's see if we can implement the local least squares in `RcppArmadillo` to get these good results without the high computational cost.
+Let's see if we can implement the local least squares in `RcppArmadillo` to get these good results without the high computational cost. See [here](https://github.com/babichmorrowc/statistical_computing2/blob/main/portfolios/03_advanced_rcpp_1/armadillo_lm_local.cpp) for the `armadillo_lm_local.cpp` code file.
 
 ```{r}
 sourceCpp(file = 'armadillo_lm_local.cpp')
@@ -201,7 +201,6 @@ microbenchmark(predLocal_R(), predLocal_arma(), times = 10) # only 10 runs becau
 
 The `RcppArmadillo` implementation is almost 7 times faster than the R implementation.
 
-### Q3: Choosing bandwidth with cross-validation
+## Q3: Choosing bandwidth with cross-validation
 
-We will now use cross-validation to choose the bandwidth matrix $\mathbf{H}$. We will 
-
+We will now use cross-validation to choose the bandwidth matrix $\mathbf{H}$. 
