@@ -129,7 +129,7 @@ system.time( reg1D(y, x) )[3]
 system.time( reg1D_parallel(y, x) )[3]
 ```
 
-We see that our parallelized function is faster than the original function, and it yields the same results.
+We see that our parallelized function is faster than the original function, and it yields the same (poor) results.
 
 ## Polynomial regression
 

@@ -2,7 +2,7 @@
 title: "Advanced Rcpp I"
 author: "Cecina Babich Morrow"
 output: pdf_document
-url_color: blue
+urlcolor: blue
 date: "2024-05-13"
 ---
 
@@ -16,7 +16,7 @@ In this portfolio, we will demonstrate how to perform local polynomial regressio
 
 ## Load the data
 
-We have the following data set on solar electricity production in Sidney, Australia:
+We have the following data set on solar electricity production in Sydney, Australia:
 
 ```{r message = FALSE}
 library(here)
@@ -40,7 +40,7 @@ ggplot(solarAU,
 ## Q1: Linear regression model
 
 We want to model $\mathbb{E}(y | \mathbf{x})$ where $y$ is the log-production and $\mathbf{x} = \{ \text{tod}, \text{toy}\}$. We will use a polynomial regression model of degree 2: $$\mathbb{E}(y | \mathbf{x}) = \beta_0 + \beta_1 \text{tod} + \beta_2 \text{tod}^2 + \beta_3 \text{toy} + \beta_4 \text{toy}^2 = \tilde{\mathbf{x}}^\top \beta$$
-where $\tilde{\mathbf{x}} = \{\text{tod}, \text{tod}^2, \text{toy}, \text{toy}^2\}$.
+where $\tilde{\mathbf{x}} = \{1, \text{tod}, \text{tod}^2, \text{toy}, \text{toy}^2\}$.
 
 Using R, we would fit the model as follows:
 
@@ -90,7 +90,7 @@ lm_arma <- function() armadillo_lm(X,y)
 microbenchmark(lm_R(), lm_arma(), times = 500)
 ```
 
-The implementation in `RcppArmadillo` is over 6 times faster than the `lm` function in R.
+The implementation in `RcppArmadillo` is over 4 times faster on average than the `lm` function in R.
 
 We can now see if the model is a good fit for the data:
 
@@ -213,7 +213,7 @@ predLocal_arma <- function() armadillo_lm_local(y, x0, X0, x, X, H)
 microbenchmark(predLocal_R(), predLocal_arma(), times = 5) # only 5 runs because R is super slow
 ```
 
-The `RcppArmadillo` implementation is almost 7 times faster than the R implementation.
+The `RcppArmadillo` implementation is once again significantly faster than the R implementation.
 
 ## Q3: Choosing bandwidth with cross-validation
 
@@ -274,3 +274,42 @@ mse_cv
 ```
 
 We can see that the mean squared error is lower when using the cross-validated bandwidth matrix.
+
+# Package creation
+
+I created an R package called `armadilLocalregression` using the functions created above (the package is available on GitHub [here](https://github.com/babichmorrowc/armadilLocalregression)). Creating a package using `RcppArmadillo` had some additional intricacies compared to creating an `R` package without any `C++` code. After creating the package and adding the `R` functions `lmLocal` and `predLocal` (as in exercise Q2), I needed to run `RcppArmadillo.package.skeleton()` in order to adapt my package structure.
+
+I then added functions using `RcppArmadillo` using the `use_rcpp_armadillo()` function from the `usethis` package. The `roxygen` comments for these functions need to start with `//'`, rather than `#'` as in the `R` functions. The functions `armadillo_lm` and `armadillo_lm_local` are both called by other functions, so I put them into a header file `armadillo_lm_funcs.h`. I was still able to add `roxygen` comments to this file.
+
+We can install the package from GitHub and test the functions:
+
+```{r}
+devtools::install_github("babichmorrowc/armadilLocalregression")
+library(armadilLocalregression)
+
+# Testing armadillo_lm
+pkg_arma_lm_beta <- armadilLocalregression::armadillo_lm(X,y)
+# Check that the package version of the function gives the same answer
+all(arma_lm_beta == pkg_arma_lm_beta)
+
+# Testing predLocal
+pkg_predLocal <- armadilLocalregression::predLocal(y, x0, X0, x, X, H)
+# Check that the package version of the function gives the same answer
+all(predLocal == pkg_predLocal)
+
+# Testing armadillo_lm_local
+pkg_predLocal_arma <- armadilLocalregression::armadillo_lm_local(y, x0, X0, x, X, H)
+# Check that the package version of the function gives the same answer
+all(arma_predLocal == pkg_predLocal_arma)
+
+# Testing armadillo_cv_H
+pkg_predLocal_cv <- armadilLocalregression::armadillo_cv_H(y, x0, X0, x, X, H_options, 5)
+# Check that the package version of the function gives the same answer
+all(arma_predLocal_cv$H == pkg_predLocal_cv$H)
+all(arma_predLocal_cv$fitted == pkg_predLocal_cv$fitted)
+```
+
+The package functions operate in the same way as the functions written in the portfolio.
+
+I set up GitHub Actions to check the package on every push to the repository. Although the package does have simple examples for the functions, I would like to add unit testing in the future via the `testthat` package to ensure that the functions work as expected, particularly on datasets other than the solar electricity production data for which they were developed.
+
