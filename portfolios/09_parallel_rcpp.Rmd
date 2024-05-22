@@ -36,7 +36,7 @@ y <- y - mean(y)
 str(y)
 ```
 
-We can plot a subset of the demand over time (on the x-axis):
+We can plot a subset of the demand over time of day (on the x-axis):
 
 ```{r}
 ncust <- ncol(Irish$indCons) 
@@ -54,7 +54,7 @@ ggplot(subset_data, aes(x = x, y = y)) +
 
 ## Linear regression
 
-We want to use the time of day $x$ to predict demand $y$. We will start with the model $\mathbb{E}(y|x) = \beta_1x)$. This function fits the model using least squares:
+We want to use the time of day $x$ to predict demand $y$. We will start with the model $\mathbb{E}(y|x) = \beta_1x$. This function fits the model using least squares:
 
 ```{r}
 reg1D <- function(y, x){
@@ -244,9 +244,9 @@ Beta_parallel <- regMD_parallel(y, X)
 all.equal(Beta_parallel, Beta)
 
 # Compare speeds
-system.time( lm(y ~ -1 + X)$coeff )[3] # 8.987
-system.time( regMD(y, X) )[3] # 1.56
-system.time( regMD_parallel(y, X) )[3] # 0.847 -> 0.191
+system.time( lm(y ~ -1 + X)$coeff )[3]
+system.time( regMD(y, X) )[3]
+system.time( regMD_parallel(y, X) )[3]
 ```
 
 We once again see that our initial function is much faster than using `lm`, and our parallelized function is the fastest of all.
@@ -328,7 +328,11 @@ using namespace arma;
 
 // [[Rcpp::plugins(openmp)]]
 // [[Rcpp::export]]
-mat regMD_local_parallel(NumericVector y, NumericMatrix X, double x0, NumericVector x, double h) {
+vec regMD_local_parallel(NumericVector y,
+                         NumericMatrix X,
+                         double x0,
+                         NumericVector x,
+                         double h) {
   int n = y.size();
   int p = X.ncol();
   NumericVector w(n);
@@ -346,10 +350,11 @@ mat regMD_local_parallel(NumericVector y, NumericMatrix X, double x0, NumericVec
   // Compute wX and wY in parallel
   #pragma omp parallel for
   for(int i = 0; i < n; i++) {
+    double sqrt_w = sqrt(w[i]);
     for(int j = 0; j < p; j++) {
-      wX(i, j) = X(i, j) * sqrt(w[i]);
+      wX(i, j) = X(i, j) * sqrt_w;
     }
-    wY[i] = y[i] * sqrt(w[i]);
+    wY[i] = y[i] * sqrt_w;
   }
   
   // Compute wXtwX in parallel
@@ -383,30 +388,28 @@ mat regMD_local_parallel(NumericVector y, NumericMatrix X, double x0, NumericVec
   arma::vec z = solve(C_arma.t(), wXtwy_arma);
   
   // Compute b using back substitution
-  /*arma::vec b = solve(C_arma, z);
+  arma::vec b = solve(C_arma, z);
   // Convert b to NumericVector
   NumericVector b_Rcpp = wrap(b);
   
   return b_Rcpp;
-   */
-  return C_arma;
+  
 }
 ```
 
 We check to make sure that `regMD_local_parallel` yields the same results as `regMD_local`, and then compare the performance:
 
 ```{r}
-b_lpr_parallel_test <- regMD_local_parallel(y, X, x0 = 35, x = x, h = 5)
-
 b_lpr_parallel <- regMD_local_parallel(y, X, x0 = 35, x = x, h = 5)
+all.equal(b_lpr_parallel, b_lpr)
 
 # Compare speeds
 system.time( lm(y ~ -1 + X, weights = dnorm(35, x, 5))$coeff )[3] # 13.142
 system.time( regMD_local(y, X, x0 = 35, x = x, h = 5) )[3] # 3.218
-# system.time( regMD_local_parallel(y, X, x0 = 35, x = x, h = 5) )[3] 
+system.time( regMD_local_parallel(y, X, x0 = 35, x = x, h = 5) )[3] # 2.288
 ```
 
-## Question 4
+## Weight normalization
 
 Consider the following:
 
@@ -416,7 +419,9 @@ w <- dnorm(0, x_test, 1)
 (w <- w / sum(x_test))
 ```
 
-All of the weights are 0. To compute this in a numerically stable way, we do the following:
+All of the weights are 0 because the values of `x_test` are very far from 0 with a standard deviation of only 1. This would prevent us from being able to use local regression since our weight vector would be all 0s. Ideally, we would like all the weights to sum to 1.
+
+To compute this in a numerically stable way, we do the following:
 
 ```{r}
 lw <- dnorm(0, x_test, 1, log = TRUE)
@@ -424,18 +429,113 @@ mlw <- max(lw)
 ( w <- exp(lw - mlw) / sum(exp(lw - mlw)) ) 
 ```
 
-This solution is preferable because
+By applying a log transformation, we can manage the very small weights resulting from `dnorm` for these values. This solution is preferable because it is numerically stable.
 
 ### Question 4
 
 We now want to implement a parallel version of this.
 
-## Adding new data
+```{r engine='Rcpp'}
+// [[Rcpp::depends(RcppArmadillo)]]
+#include <RcppArmadillo.h>
+#include <omp.h>
+using namespace Rcpp;
+using namespace arma;
 
-When new data becomes available, we can update the model matrix in the following way: $\mathbf{X} \leftarrow [\mathbf{X}^\top_{\text{old}}, \mathbf{X}^\top_{\text{new}}]^\top$.
+// [[Rcpp::plugins(openmp)]]
+// [[Rcpp::export]]
+arma::vec regMD_local_stable_parallel(NumericVector y,
+                                      NumericMatrix X,
+                                      double x0,
+                                      NumericVector x,
+                                      double h) {
+  int n = y.size();
+  int p = X.ncol();
+  arma::vec w(n);
+  arma::mat wX(n, p);
+  arma::vec wY(n);
+  
+  // Compute log weights in parallel
+  arma::vec lw(n);
+  #pragma omp parallel for
+  for(int i = 0; i < n; i++) {
+    lw[i] = R::dnorm(x0, x[i], h, 1);
+  }
+  double mlw = max(lw);
+  
+  // Compute weights in parallel
+  arma::vec exp_lw(n);
+  double sum_exp_lw = 0;
+  #pragma omp parallel for reduction(+:sum_exp_lw)
+  for(int i = 0; i < n; i++) {
+    exp_lw[i] = exp(lw[i] - mlw);
+    sum_exp_lw += exp_lw[i];
+  }
+  w = exp_lw / sum_exp_lw;
+  
+  // Compute wX and wY in parallel
+  #pragma omp parallel for
+  for(int i = 0; i < n; i++) {
+    double sqrt_w = sqrt(w[i]);
+    for(int j = 0; j < p; j++) {
+      wX(i, j) = X(i, j) * sqrt_w;
+    }
+    wY[i] = y[i] * sqrt_w;
+  }
+  
+  // Compute wXtwX in parallel
+  NumericMatrix wXtwX(p, p);
+  #pragma omp parallel for collapse(2)
+  for(int i = 0; i < p; i++) {
+    for(int j = 0; j < p; j++) {
+      for(int k = 0; k < n; k++) {
+        wXtwX(i, j) += wX(k, i) * wX(k, j);
+      }
+    }
+  }
+  
+  // Compute wXtwy in parallel
+  NumericVector wXtwy(p);
+  #pragma omp parallel for
+  for(int i = 0; i < p; i++) {
+    for(int k = 0; k < n; k++) {
+      wXtwy[i] += wX(k, i) * wY[k];
+    }
+  }
+  
+  // Convert wXtwX and wXtwy to armadillo
+  arma::mat wXtwX_arma = as<arma::mat>(wXtwX);
+  arma::vec wXtwy_arma = as<arma::vec>(wXtwy);
+  
+  // Compute C
+  arma::mat C = chol(wXtwX_arma, "upper");
+  // Compute z using forward substitution
+  arma::vec z = solve(C.t(), wXtwy_arma);
+  // Compute b using back substitution
+  arma::vec b = solve(C, z);
+  
+  return b;
+}
+```
 
-### Question 5
+We check to see if `regMD_local_stable_parallel` gives similar predictions:
 
-We want to efficiently update our fit given that we have stored $\mathbf{X}^\top_{\text{old}} \mathbf{W}_{\text{old}}\mathbf{X}_{\text{old}}$.
+```{r}
+b_lpr_stable_parallel <- regMD_local_stable_parallel(y, X, x0 = 35, x = x, h = 5)
 
+lpr_preds <- lpr_preds %>% 
+  mutate(regMD_local_stable_preds = Xu %*% b_lpr_stable_parallel)
+
+# Compare values from regMD_local_stable_parallel and regMD_local
+ggplot(subset_data, aes(x = x, y = y)) +
+  geom_point(color = "grey") +
+  geom_line(data = lpr_preds, aes(x = x, y = regMD_local_preds),
+            color = "red") +
+  geom_line(data = lpr_preds, aes(x = x, y = regMD_local_stable_preds),
+            color = "black", linetype = "dashed") +
+  labs(x = "Time of day", y = "Demand") +
+  theme_bw()
+```
+
+The red line shows the prediction from `regMD_local` and the black dashed line shows the prediction from `regMD_local_stable_parallel`. We see that the predictions are almost identical.
 
